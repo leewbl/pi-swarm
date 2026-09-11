@@ -6,24 +6,50 @@
     "locale": "zh-CN",
     "quality_profile": "showcase",
     "output": "pi-swarm-architecture.html",
-    "viewBox": [1180, 920],
+    "viewBox": [
+      1380,
+      560
+    ],
+    "repository": {
+      "url": "https://github.com/leewbl/pi-swarm",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "95e8f006f0bb025026e5be11f2ae8d5a56b74777"
+    },
     "views": [
       {
         "id": "task-path",
         "label": "任务主路径",
-        "focus": ["coordinator", "backend", "runtime", "taskpool", "claims"],
+        "focus": [
+          "coordinator",
+          "backend",
+          "runtime",
+          "taskpool",
+          "claims"
+        ],
         "note": "协调者创建任务;后端扫描过滤后 O_EXCL 原子认领;claims/ 是所有权唯一事实"
       },
       {
         "id": "events-knowledge",
         "label": "事件与知识",
-        "focus": ["runtime", "events", "blackboard", "artifacts", "tester"],
+        "focus": [
+          "runtime",
+          "events",
+          "blackboard",
+          "artifacts",
+          "tester"
+        ],
         "note": "单写者 JSONL 流与黑板知识;大产出进 artifacts/ 按路径引用"
       },
       {
         "id": "policy-recovery",
         "label": "策略与恢复",
-        "focus": ["manifests", "runtimestate", "claims", "runtime"],
+        "focus": [
+          "manifests",
+          "runtimestate",
+          "claims",
+          "runtime"
+        ],
         "note": "清单驱动权限;心跳过期且进程确认死亡后自动恢复孤儿任务"
       }
     ]
@@ -35,27 +61,60 @@
       "label": "Coordinator 会话",
       "sublabel": "分解目标 · 创建任务",
       "tag": "从不认领任务",
-      "pos": [60, 140],
-      "size": [210, 80],
-      "sources": [{ "path": "src/templates/agents/coordinator.yaml", "label": "角色清单" }]
+      "pos": [
+        40,
+        116
+      ],
+      "size": [
+        190,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/templates/agents/coordinator.yaml",
+          "label": "角色清单"
+        }
+      ]
     },
     {
       "id": "backend",
       "type": "backend",
       "label": "Backend 会话",
       "sublabel": "扫描 · 原子认领 · 交付",
-      "pos": [60, 380],
-      "size": [210, 80],
-      "sources": [{ "path": "src/templates/agents/backend.yaml", "label": "角色清单" }]
+      "pos": [
+        40,
+        264
+      ],
+      "size": [
+        190,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/templates/agents/backend.yaml",
+          "label": "角色清单"
+        }
+      ]
     },
     {
       "id": "tester",
       "type": "backend",
       "label": "Tester 会话",
       "sublabel": "验证 · 评审 · 广播",
-      "pos": [60, 620],
-      "size": [210, 80],
-      "sources": [{ "path": "src/templates/agents/tester.yaml", "label": "角色清单" }]
+      "pos": [
+        40,
+        412
+      ],
+      "size": [
+        190,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/templates/agents/tester.yaml",
+          "label": "角色清单"
+        }
+      ]
     },
     {
       "id": "runtime",
@@ -63,11 +122,23 @@
       "label": "Pi Swarm 扩展运行时",
       "sublabel": "每会话一个实例",
       "tag": "任务池 + 事件双循环",
-      "pos": [400, 280],
-      "size": [250, 280],
+      "pos": [
+        300,
+        100
+      ],
+      "size": [
+        220,
+        380
+      ],
       "sources": [
-        { "path": "src/extension/index.ts", "label": "扩展入口" },
-        { "path": "src/runtime/runtime.ts", "label": "运行时循环" }
+        {
+          "path": "src/extension/index.ts",
+          "label": "扩展入口"
+        },
+        {
+          "path": "src/runtime/runtime.ts",
+          "label": "运行时循环"
+        }
       ]
     },
     {
@@ -76,9 +147,20 @@
       "label": "任务池 tasks/",
       "sublabel": "Markdown + front matter",
       "tag": "拉取式 · 持久工作源",
-      "pos": [810, 56],
-      "size": [280, 88],
-      "sources": [{ "path": "src/storage/task-store.ts", "label": "任务存取" }]
+      "pos": [
+        770,
+        100
+      ],
+      "size": [
+        220,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/storage/task-store.ts",
+          "label": "任务存取"
+        }
+      ]
     },
     {
       "id": "claims",
@@ -86,9 +168,20 @@
       "label": "原子认领 claims/",
       "sublabel": "O_EXCL 独占创建",
       "tag": "所有权唯一事实",
-      "pos": [810, 170],
-      "size": [280, 88],
-      "sources": [{ "path": "src/storage/atomic-claim.ts", "label": "原子认领" }]
+      "pos": [
+        770,
+        182
+      ],
+      "size": [
+        220,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/storage/atomic-claim.ts",
+          "label": "原子认领"
+        }
+      ]
     },
     {
       "id": "events",
@@ -96,9 +189,20 @@
       "label": "事件流 events/",
       "sublabel": "每实例单写 JSONL",
       "tag": "通知 · at-least-once",
-      "pos": [810, 284],
-      "size": [280, 88],
-      "sources": [{ "path": "src/storage/event-store.ts", "label": "事件存取" }]
+      "pos": [
+        770,
+        264
+      ],
+      "size": [
+        220,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/storage/event-store.ts",
+          "label": "事件存取"
+        }
+      ]
     },
     {
       "id": "blackboard",
@@ -106,9 +210,20 @@
       "label": "黑板 blackboard/",
       "sublabel": "Markdown 共享知识",
       "tag": "单写者文档策略",
-      "pos": [810, 398],
-      "size": [280, 88],
-      "sources": [{ "path": "src/storage/blackboard-store.ts", "label": "黑板存取" }]
+      "pos": [
+        770,
+        346
+      ],
+      "size": [
+        220,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/storage/blackboard-store.ts",
+          "label": "黑板存取"
+        }
+      ]
     },
     {
       "id": "artifacts",
@@ -116,9 +231,41 @@
       "label": "工件 artifacts/",
       "sublabel": "大型任务产出",
       "tag": "按路径引用",
-      "pos": [810, 512],
-      "size": [280, 88],
-      "sources": [{ "path": "src/storage/artifact-store.ts", "label": "工件存取" }]
+      "pos": [
+        1030,
+        100
+      ],
+      "size": [
+        220,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/storage/artifact-store.ts",
+          "label": "工件存取"
+        }
+      ]
+    },
+    {
+      "id": "runtimestate",
+      "type": "database",
+      "label": "运行时状态 runtime/",
+      "sublabel": "presence 心跳 · cursors",
+      "tag": "崩溃后可重建",
+      "pos": [
+        770,
+        428
+      ],
+      "size": [
+        220,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/storage/presence-store.ts",
+          "label": "presence"
+        }
+      ]
     },
     {
       "id": "manifests",
@@ -126,21 +273,19 @@
       "label": "角色清单 agents/",
       "sublabel": "六内置角色 + 自定义",
       "tag": "能力 · 订阅 · 读写策略",
-      "pos": [810, 626],
-      "size": [280, 88],
-      "sources": [{ "path": "src/templates/agents/backend.yaml", "label": "清单示例" }]
-    },
-    {
-      "id": "runtimestate",
-      "type": "database",
-      "label": "运行时状态 runtime/",
-      "sublabel": "presence 心跳 · cursors 游标",
-      "tag": "崩溃后可重建",
-      "pos": [810, 740],
-      "size": [280, 88],
+      "pos": [
+        1030,
+        410
+      ],
+      "size": [
+        220,
+        68
+      ],
       "sources": [
-        { "path": "src/storage/presence-store.ts", "label": "presence" },
-        { "path": "src/storage/cursor-store.ts", "label": "cursors" }
+        {
+          "path": "src/templates/agents/backend.yaml",
+          "label": "清单示例"
+        }
       ]
     }
   ],
@@ -148,25 +293,124 @@
     {
       "kind": "region",
       "label": "oh-my-pi 会话 ×N(无监督 LLM · 互不直调)",
-      "wraps": ["coordinator", "backend", "tester", "runtime"]
+      "wraps": [
+        "coordinator",
+        "backend",
+        "tester",
+        "runtime"
+      ]
     },
     {
       "kind": "region",
       "label": ".pi/swarm/ — 共享文件系统(本地 · 原子原语)",
-      "wraps": ["taskpool", "claims", "events", "blackboard", "artifacts", "manifests", "runtimestate"]
+      "wraps": [
+        "taskpool",
+        "claims",
+        "events",
+        "blackboard",
+        "artifacts",
+        "runtimestate",
+        "manifests"
+      ]
     }
   ],
   "connections": [
-    { "id": "coordinator-runtime", "from": "coordinator", "to": "runtime", "label": "swarm_task_create" },
-    { "id": "backend-runtime", "from": "backend", "to": "runtime", "label": "swarm_task_claim" },
-    { "id": "tester-runtime", "from": "tester", "to": "runtime", "label": "swarm_task_complete" },
-    { "id": "runtime-taskpool", "from": "runtime", "to": "taskpool", "label": "扫描 · 过滤可认领" },
-    { "id": "runtime-claims", "from": "runtime", "to": "claims", "label": "O_EXCL 认领/完结", "variant": "emphasis" },
-    { "id": "runtime-events", "from": "runtime", "to": "events", "label": "追加 + 游标消费" },
-    { "id": "runtime-blackboard", "from": "runtime", "to": "blackboard", "label": "策略内读写" },
-    { "id": "runtime-artifacts", "from": "runtime", "to": "artifacts", "label": "发布产出" },
-    { "id": "runtime-runtimestate", "from": "runtime", "to": "runtimestate", "label": "心跳 · 游标持久化", "variant": "dashed" },
-    { "id": "manifests-runtime", "from": "manifests", "to": "runtime", "label": "角色契约 · 权限校验" }
+    {
+      "id": "coordinator-runtime",
+      "from": "coordinator",
+      "to": "runtime",
+      "label": "创建任务"
+    },
+    {
+      "id": "backend-runtime",
+      "from": "backend",
+      "to": "runtime",
+      "label": "原子认领",
+      "labelDy": 10
+    },
+    {
+      "id": "tester-runtime",
+      "from": "tester",
+      "to": "runtime",
+      "label": "完成 · 广播"
+    },
+    {
+      "id": "runtime-taskpool",
+      "from": "runtime",
+      "to": "taskpool",
+      "label": "扫描 · 过滤可认领",
+      "labelSegment": 2
+    },
+    {
+      "id": "runtime-claims",
+      "from": "runtime",
+      "to": "claims",
+      "label": "O_EXCL 认领/完结",
+      "variant": "emphasis",
+      "labelSegment": 2
+    },
+    {
+      "id": "runtime-events",
+      "from": "runtime",
+      "to": "events",
+      "label": "追加 + 游标消费",
+      "labelSegment": 2,
+      "labelDy": 14
+    },
+    {
+      "id": "runtime-blackboard",
+      "from": "runtime",
+      "to": "blackboard",
+      "label": "策略内读写",
+      "labelSegment": 2
+    },
+    {
+      "id": "runtime-runtimestate",
+      "from": "runtime",
+      "to": "runtimestate",
+      "label": "心跳 · 游标持久化",
+      "labelSegment": 2
+    },
+    {
+      "id": "runtime-artifacts",
+      "from": "runtime",
+      "to": "artifacts",
+      "label": "发布产出",
+      "fromSide": "top",
+      "toSide": "top",
+      "via": [
+        [
+          410,
+          72
+        ],
+        [
+          1140,
+          72
+        ]
+      ]
+    },
+    {
+      "id": "manifests-runtime",
+      "from": "manifests",
+      "to": "runtime",
+      "label": "角色契约 · 权限校验",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [
+        [
+          1140,
+          510
+        ],
+        [
+          410,
+          510
+        ]
+      ],
+      "labelAt": [
+        775,
+        510
+      ]
+    }
   ],
   "cards": [
     {
