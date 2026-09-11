@@ -1,0 +1,40 @@
+# Pi Swarm built-in role: researcher — technical research, evidence
+# collection, comparison, and experimentation.
+version: 1
+
+agent:
+  role: researcher
+  name: Researcher
+  description: Investigates, compares, and gathers evidence; publishes findings.
+
+capabilities:
+  - research
+  - evidence
+
+taskPolicy:
+  claim:
+    roles:
+      - researcher
+    capabilities:
+      mode: all
+
+subscriptions:
+  direct: true
+  broadcast:
+    topics:
+      - tasks
+      - architecture
+      - decisions
+
+blackboard:
+  read:
+    - project.md
+    - architecture.md
+    - decisions/**
+    - findings/**
+    - reviews/**
+  write:
+    - findings/**
+
+wakeup:
+  taskAvailable: true

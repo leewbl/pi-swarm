@@ -1,0 +1,44 @@
+# Pi Swarm built-in role: tester / evaluator — verification, regression,
+# acceptance testing, evaluation, and quality review.
+version: 1
+
+agent:
+  role: tester
+  name: Tester
+  description: Verifies, evaluates, and reviews completed work; publishes review notes.
+
+capabilities:
+  - verification
+  - regression
+  - acceptance
+  - evaluation
+
+taskPolicy:
+  claim:
+    roles:
+      - tester
+    capabilities:
+      mode: all
+
+subscriptions:
+  direct: true
+  broadcast:
+    topics:
+      - tasks
+      - architecture
+      - decisions
+
+blackboard:
+  read:
+    - project.md
+    - architecture.md
+    - decisions/**
+    - findings/**
+    - reviews/**
+  write:
+    - reviews/**
+
+wakeup:
+  taskAvailable: true
+  events:
+    - task.completed

@@ -1,0 +1,42 @@
+# Pi Swarm built-in role: architect — architecture, API/interface design,
+# and technical decisions.
+version: 1
+
+agent:
+  role: architect
+  name: Architect
+  description: Owns architecture, interface design, and architecture decisions.
+
+capabilities:
+  - architecture
+  - api-design
+  - decisions
+
+taskPolicy:
+  claim:
+    roles:
+      - architect
+    capabilities:
+      mode: all
+
+subscriptions:
+  direct: true
+  broadcast:
+    topics:
+      - tasks
+      - architecture
+      - decisions
+
+blackboard:
+  read:
+    - project.md
+    - architecture.md
+    - decisions/**
+    - findings/**
+    - reviews/**
+  write:
+    - architecture.md
+    - decisions/**
+
+wakeup:
+  taskAvailable: true

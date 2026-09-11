@@ -1,0 +1,41 @@
+# Pi Swarm built-in role: frontend developer — UI, client logic, and
+# frontend testing.
+version: 1
+
+agent:
+  role: frontend
+  name: Frontend Developer
+  description: Implements UI and client-side logic with related frontend tests.
+
+capabilities:
+  - frontend
+  - ui
+  - testing
+
+taskPolicy:
+  claim:
+    roles:
+      - frontend
+    capabilities:
+      mode: all
+
+subscriptions:
+  direct: true
+  broadcast:
+    topics:
+      - tasks
+      - architecture
+      - decisions
+
+blackboard:
+  read:
+    - project.md
+    - architecture.md
+    - decisions/**
+    - findings/**
+    - reviews/**
+  write:
+    - findings/frontend/**
+
+wakeup:
+  taskAvailable: true

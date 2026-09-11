@@ -1,0 +1,43 @@
+# Pi Swarm built-in role: backend developer — APIs, backend logic, data
+# access, and backend testing.
+version: 1
+
+agent:
+  role: backend
+  name: Backend Developer
+  description: Implements APIs, backend logic, and data access with related tests.
+
+capabilities:
+  - backend
+  - api
+  - database
+  - typescript
+  - testing
+
+taskPolicy:
+  claim:
+    roles:
+      - backend
+    capabilities:
+      mode: all
+
+subscriptions:
+  direct: true
+  broadcast:
+    topics:
+      - tasks
+      - architecture
+      - decisions
+
+blackboard:
+  read:
+    - project.md
+    - architecture.md
+    - decisions/**
+    - findings/**
+    - reviews/**
+  write:
+    - findings/backend/**
+
+wakeup:
+  taskAvailable: true

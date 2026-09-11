@@ -1,0 +1,21 @@
+# Pi Swarm workspace configuration (template; /swarm init never overwrites
+# an existing copy). Mirrors DEFAULT_SWARM_CONFIG from src/protocol/schemas.ts.
+version: 1
+
+project:
+  name: project
+
+runtime:
+  eventPollIntervalMs: 500
+  taskScanIntervalMs: 1000
+  wakeBatchWindowMs: 250
+  heartbeatIntervalMs: 5000
+  presenceStaleMs: 15000
+
+blackboard:
+  # Shared hotspot files and the only roles allowed to write them.
+  hotspots:
+    project.md:
+      - coordinator
+    architecture.md:
+      - architect

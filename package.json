@@ -1,0 +1,25 @@
+{
+  "name": "pi-swarm",
+  "version": "1.0.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "description": "File-native multi-agent coordination runtime for oh-my-pi (pull-based task pool, atomic claims, JSONL events, Markdown blackboard)",
+  "omp": {
+    "extensions": ["./src/extension/index.ts"]
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "yaml": "^2.5.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}
