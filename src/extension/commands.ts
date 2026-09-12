@@ -452,10 +452,20 @@ const USAGE = [
   "  doctor            workspace diagnostics",
 ].join("\n");
 
+/**
+ * omp 18.1.10 delivers the composer tail as one string ("/swarm init" →
+ * "init"); the array form stays accepted for forward compatibility and tests.
+ */
+function normalizeCommandArgs(args: string | readonly string[] | undefined): string[] {
+  if (typeof args === "string") return args.trim().split(/\s+/).filter(Boolean);
+  return [...(args ?? [])];
+}
+
 export function registerSwarmCommands(pi: PiLike, deps: SwarmCommandDeps): void {
   pi.registerCommand("swarm", {
     description: "Pi Swarm: init | role <role> | status | tasks | agents | recover | doctor",
-    handler: (args, ctx) => handleSwarmCommand(pi, ctx, args ?? [], deps),
+    handler: (args, ctx) =>
+      handleSwarmCommand(pi, ctx, normalizeCommandArgs(args), deps),
   });
 }
 

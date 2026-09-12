@@ -13,12 +13,7 @@
 | 门禁 | 裁定 | 说明 |
 |---|---|---|
 | G0 单元 | ✅ 通过 | 全绿 |
-| G1 文件系统集成 | ✅ 通过 | 含 1 项 flaky 测试基建缺陷（D-1），产品逻辑无错 |
-| G2 多进程 | ✅ 通过 | 4 进程竞争 claim 恰一主；全量 3 连跑全绿 |
-| G3 真实 OMP | ⚠️ 部分通过 | 扩展加载/工具注册/防护路径实测通过；命令面与唤醒需交互式窗口确认 |
-| G4 性能规模 | ⚠️ 1 项 SHOULD 缺口 | 无元数据缓存，2000 任务热态 list p95≈345ms（D-2）；事件链路极优 |
-
-**结论：附条件通过（conditional pass）。** 无 P0 缺陷；1 项 P1（测试基建）+ 2 项 P2/P3 建议修复后即可建议发布。发布前须补做 §5 交互式窗口验收（G3 遗留）。
+> **2026-09-12 复检更新（用户交互测试触发 + PTY 实证）**：原"附条件通过"中待交互确认的命令面经真实 TUI 验证 **失败**，发现两项宿主契约漂移缺陷 D-5（P0 阻断）/D-6（P1）。**总裁定改为：不通过（发布阻断）**，详见 §7 与 §11。
 
 ---
 
@@ -79,10 +74,8 @@
 | Q-04 穿越矩阵：`../`×2、绝对路径、`a/../../` | ✅ 4/4 阻断，报错明确 |
 | Q-04 `%2e%2e` URL 编码变体 | ✅ 包含性成立（落盘于黑板内字面目录，FS 路径不 URL 解码，零逃逸）——测试计划措辞已按此修正 |
 | Q-04 符号链接指向界外目录 | ✅ 不可读 |
-| Q-04 界外文件创建 | ✅ 零逃逸 |
-| R-02 工件文件名穿越 ×3 | ✅ 3/3 阻断 |
-| Q-06 hotspot（project.md）writer policy | ✅ 强制拒绝 |
-
+| D-5 | **P0** | 产品缺陷（宿主契约） | omp v18.1.10 传给 `registerCommand` handler 的 `args` 是**字符串**（诊断实测 `typeof=string json="hello world"`），交付物按 `string[]` 消费（`commands.ts:469` `const [sub, ...rest] = args` 解构字符串得字符）→ 任何 `/swarm <子命令>` 落入 default 仅显示 usage，**init/role/status/tasks/agents/recover/doctor 七个命令在真实 TUI 全部不可用**，`.pi/swarm/` 不会创建（用户实测 `/swarm init` 无效的根因） | 注册边界归一化：`typeof args === "string" ? args.trim().split(/\\s+/).filter(Boolean) : (args ?? [])`；`pi-api.ts` CommandHandler 类型与测试 FakePi 同步改为真实契约（字符串） |
+| D-6 | P1 | 产品缺陷（宿主契约） | omp 对象形式 `appendEntry({type:"custom",customType,...})` 落盘后 `customType` 字段存储**整个对象**（实测 `"customType":{"type":"custom","customType":"dbg.marker.v1",...}`），而 `rebuildBindingFromSession` 按字符串 `entry.customType === "pi-swarm.binding.v1"` 匹配 → 永不命中 → **会话重启后角色绑定丢失**，README"自动重绑"承诺失效（FR-3） | 改用 omp 文档两参形式 `appendEntry("pi-swarm.binding.v1", {role})` 或读取端兼容对象形 customType；补 Z-02 真实宿主往返回归 |
 ## 7. 缺陷与建议清单
 
 | ID | 级别 | 类型 | 摘要 | 修复建议 |
@@ -107,7 +100,26 @@
 | 9 | 中断 claim 修复 | 冒烟 reconcile 漂移修复 + recovery 单测 | ✅ |
 | 10 | 孤儿恢复（单机） | recovery-service 单测（活 PID 不回收/死亡双条件） | ✅ |
 | 11 | 每实例 JSONL | event-store 单测（单写者/残行/损坏行）+ 冒烟 | ✅ |
-| 12 | direct 路由 | event-poller 单测 + 冒烟 + 抽检 X-01 | ✅ |
+
+## 11. 复检补充（2026-09-12）
+
+用户在真实窗口执行 `/swarm init` 未创建工作区 → 触发复检。验收人以独立诊断扩展 + PTY 驱动真实 omp TUI 实证：
+
+1. `/dbg hello world` → handler 收到 `typeof=string json="hello world"`（args 为字符串，非数组）
+2. PTY 会话中 `/swarm init`、`/swarm doctor` 均只渲染 usage 面板、`.pi/` 从未创建 —— 与用户现象一致，D-5 定性
+3. 对象形式 appendEntry 落盘形状异常（customType 被整体对象占据）—— D-6 定性
+
+**根因归类**：两缺陷同源——扩展适配层（pi-api.ts + FakePi）按"设想的宿主契约"编写并自测通过，未与真实 omp 契约对账。验收报告 G3 的 ⚠️"命令面待交互确认"正是此风险敞口，现确认为失败。
+
+**复检后 Release 清单变化**：#2（init 真实宿主）❌、#20（status/recover/doctor 真实宿主）❌、#5（绑定重绑持久化）❌ D-6；其余维持。修复 D-5/D-6 后须重跑：七命令真实 TUI 冒烟（TS-Z 新组）+ 绑定重启往返（Z-02）。
+
+### 新增评测组 TS-Z — 宿主契约一致性（真实 omp，修复后必须全绿）
+
+| ID | 用例 | 步骤/条件 | 通过判定 | 追溯 |
+|---|---|---|---|---|
+| Z-01 | 命令 args 字符串契约 | 真实 TUI（PTY 驱动）依次执行 `/swarm init`、`/swarm role backend`、`/swarm status`、`/swarm doctor` | 各命令执行对应动作：init 落盘 `.pi/swarm/`；role 生成 presence；status/doctor 有各自输出而非 usage | FR-1、D-5 回归 |
+| Z-02 | 绑定持久化往返 | `/swarm role backend` 后重启会话（同 session resume） | 重绑成功：presence 新实例、工具可用；binding marker 以真实宿主可回读形状落盘 | FR-3、D-6 回归 |
+| Z-03 | 扩展宿主契约对账 | 以诊断扩展记录 omp 真实契约（args 类型、appendEntry 落盘形状、sendMessage 选项接受集），与 pi-api.ts 声明逐项比对 | 声明与真实契约零漂移（或差异已在适配层归一化并有测试） | Inv-6 边界 |
 | 13 | broadcast 订阅路由 | 同上 + 12k 扇出消费 | ✅ |
 | 14 | cursor 重启重放 | cursor-store/event-stream 集成 + 12k 重放 | ✅ |
 | 15 | inbox 批处理无放大 | inbox/runtime-loop 测试（1 batch/flush、静默抑制） | ✅ |

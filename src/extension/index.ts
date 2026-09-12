@@ -69,6 +69,9 @@ function safeHook(name: string, hook: ExtensionHook, onError: (msg: string, err:
 export default function piSwarmExtension(pi: PiLike): void {
   pi.setLabel("Pi Swarm");
   const logger = createLogger("pi-swarm", { sink: (line) => pi.logger?.info?.(line) });
+  // omp 18.1.10 exposes the workspace cwd on the load-time context; hook
+  // contexts carry only {type}, so session_start falls back to this.
+  const loadCwd = pi.cwd;
   const ctxRef = createCtxRef();
   const deps: SwarmCommandDeps = {
     buildStack: buildSwarmStack,
@@ -95,9 +98,14 @@ export default function piSwarmExtension(pi: PiLike): void {
     "session_start",
     safeHook("session_start", async (ctx: PiCtxLike) => {
       ctxRef.set(ctx);
-      const paths = await locateSwarmRoot(ctx.cwd);
+      const cwd = ctx.cwd ?? loadCwd;
+      if (!cwd) {
+        logger.debug("no cwd available on session_start; skipping swarm re-bind");
+        return undefined;
+      }
+      const paths = await locateSwarmRoot(cwd);
       if (!paths) {
-        logger.debug("no swarm workspace under cwd", { cwd: ctx.cwd });
+        logger.debug("no swarm workspace under cwd", { cwd });
         return undefined;
       }
       const role = rebuildBindingFromSession(ctx);

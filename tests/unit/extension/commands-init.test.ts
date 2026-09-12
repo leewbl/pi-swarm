@@ -114,4 +114,14 @@ describe("/swarm init", () => {
     await pi.commands.get("swarm")!.handler([], ctx);
     expect(ctx.notifications[1]!.message).toContain("Usage: /swarm");
   });
-});
+
+  it("accepts the omp 18.1.10 single-string args form ('/swarm init' → 'init')", async () => {
+    const { pi, ctx } = await freshWorkspace();
+    dir = ctx.cwd;
+
+    await pi.commands.get("swarm")!.handler("init", ctx);
+
+    expect(ctx.notifications[0]!.message).toContain("[ok] created swarm.yaml");
+    expect(await fsp.stat(path.join(ctx.cwd, ".pi", "swarm", "swarm.yaml"))).toBeTruthy();
+  });
+ });

@@ -41,7 +41,10 @@ export interface ToolDefinition {
 // Commands
 // ---------------------------------------------------------------------------
 
-export type CommandHandler = (args: string[], ctx: PiCtxLike) => void | Promise<void>;
+export type CommandHandler = (
+  args: string | readonly string[],
+  ctx: PiCtxLike,
+) => void | Promise<void>;
 
 export interface CommandDefinition {
   description: string;
@@ -109,6 +112,8 @@ export type ExtensionHook = (ctx: PiCtxLike, payload?: unknown) => HookResult | 
 // ---------------------------------------------------------------------------
 
 export interface PiLike {
+  /** Working directory captured at extension load (omp 18.1.10). */
+  cwd?: string;
   on(event: string, handler: ExtensionHook): unknown;
   registerTool(def: ToolDefinition): unknown;
   registerCommand(name: string, def: CommandDefinition): unknown;
