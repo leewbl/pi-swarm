@@ -76,7 +76,7 @@ function notActionableReason(task: TaskDocument, ctx: ResolverContext): string |
   const meta = task.metadata;
   if (meta.status !== "open") return `task ${meta.id} is ${meta.status}, not open`;
   if (ctx.claimExists) return `task ${meta.id} already has an owner`;
-  if (meta.availableAt !== undefined && ctx.nowIso < meta.availableAt) {
+  if (meta.availableAt !== undefined && Date.parse(ctx.nowIso) < Date.parse(meta.availableAt)) {
     return `task ${meta.id} is not due until ${meta.availableAt}`;
   }
   for (const dep of meta.dependsOn) {

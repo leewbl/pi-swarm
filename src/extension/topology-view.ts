@@ -9,6 +9,7 @@ import type { ActiveTopology } from "../domain/topology.js";
 import { resolveTaskCandidates } from "../domain/candidate-resolver.js";
 import { rankByPreferredCapabilities } from "../domain/candidate-resolver.js";
 import { nowIso } from "../util/clock.js";
+import { isProcessAlive } from "../domain/process-alive.js";
 import type { SwarmStack } from "./compose.js";
 
 export interface TopologyViewResult {
@@ -24,6 +25,7 @@ async function currentTopology(stack: SwarmStack): Promise<ActiveTopology> {
   return buildActiveTopology(presence, manifests, {
     nowIso: nowIso(),
     presenceStaleMs: stack.config.runtime.presenceStaleMs,
+    isProcessAlive,
   });
 }
 

@@ -23,17 +23,19 @@ export interface SwarmInboxMessage {
 }
 
 /**
- * Delivery policy mapping (architecture §16):
- * - idle + actionable            -> { deliverAs: "aside", triggerTurn: true }
- * - active + informational        -> { deliverAs: "aside" }  (step boundary)
- * - active + deferred actionable  -> { deliverAs: "followUp" }
- * - warnings                      -> { deliverAs: "followUp" }
+ * Delivery policy mapping (fix review — actionable wake semantics):
+ * - actionable (any idle state) -> { deliverAs: "followUp", triggerTurn: true }
+ *   Actionable durable work requires the agent to complete a follow-up
+ *   turn, not ride as an ambient aside.
+ * - active + informational      -> { deliverAs: "aside" }  (step boundary)
+ * - warnings / idle informational -> { deliverAs: "followUp" }
  * `steer` is never used by swarm coordination.
  */
 export type WakeDelivery =
   | { deliverAs: "aside"; triggerTurn: true }
   | { deliverAs: "aside" }
-  | { deliverAs: "followUp" };
+  | { deliverAs: "followUp" }
+  | { deliverAs: "followUp"; triggerTurn: true };
 
 export interface WakePort {
   isIdle(): boolean;

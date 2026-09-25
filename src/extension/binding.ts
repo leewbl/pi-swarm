@@ -34,6 +34,8 @@ export interface RuntimeHandle {
   stop(): unknown;
   markBusy?(): void;
   markIdle?(): void;
+  /** Immediate reconciliation point (session_stop): presence + polls + flush. */
+  settle?(): unknown;
   status(): RuntimeStatus;
 }
 

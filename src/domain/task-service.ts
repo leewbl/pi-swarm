@@ -65,6 +65,8 @@ export interface TaskServiceDeps {
   manifestStore?: ManifestStore;
   /** Workspace config: staleness window + global fallback gate. */
   config?: SwarmConfig;
+  /** Optional local-host PID probe: dead processes never hold boundaries. */
+  isProcessAlive?: (pid: number) => boolean;
   now?: () => string;
 }
 
@@ -503,13 +505,21 @@ class TaskServiceImpl implements TaskService {
       return { ok: false, code: "invalid_input", message: "block requires a non-empty reason" };
     }
     const obligations = result.blockedOn ?? [];
+    // Durable Obligation invariant (fix §7): `blocked` MUST wait on at least
+    // one durable obligation — blocking "until somebody acts" without one
+    // recreates the silent-wait deadlock this fix exists to eliminate.
+    if (obligations.length === 0) {
+      return {
+        ok: false,
+        code: "invalid_input",
+        message: "block requires at least one durable obligation in blockedOn; create it first (swarm_request_create)",
+      };
+    }
     for (const id of obligations) {
       if (typeof id !== "string" || !TASK_ID_RE.test(id)) {
         return { ok: false, code: "invalid_input", message: `blockedOn contains invalid task id: ${String(id)}` };
       }
     }
-    const loaded = await this.loadOwned(taskId, claimId, by, "blocked");
-    if (!loaded.ok) return loaded;
     const tasks = await this.deps.taskStore.list();
     const known = new Set(tasks.map((t) => t.metadata.id));
     for (const id of obligations) {
@@ -517,6 +527,8 @@ class TaskServiceImpl implements TaskService {
         return { ok: false, code: "invalid_input", message: `blockedOn target ${id} does not exist` };
       }
     }
+    const loaded = await this.loadOwned(taskId, claimId, by, "blocked");
+    if (!loaded.ok) return loaded;
     const merged = [...new Set([...loaded.task.metadata.blockedOn, ...obligations])];
     const task: TaskDocument = {
       ...loaded.task,
@@ -579,6 +591,9 @@ class TaskServiceImpl implements TaskService {
     return buildActiveTopology(presence, manifests, {
       nowIso: this.now(),
       presenceStaleMs: this.deps.config.runtime.presenceStaleMs,
+      ...(this.deps.isProcessAlive !== undefined
+        ? { isProcessAlive: this.deps.isProcessAlive }
+        : {}),
     });
   }
 

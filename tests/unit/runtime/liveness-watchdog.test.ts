@@ -157,6 +157,23 @@ describe("evaluateLiveness (fix §21)", () => {
     });
     expect(forCoordinator.stalled).toHaveLength(1);
   });
+
+  it("respects the global fallback gate — no policy drift with the claim resolver", () => {
+    // fallback globally disabled: the coordinator-only topology cannot serve
+    // a backend task, so the watchdog must report UNSERVICEABLE (matching
+    // what claim-time resolution would deny), not stalled-serviceable.
+    const report = evaluateLiveness({
+      nowIso: T0,
+      warningAfterMs: 60_000,
+      fallbackEnabled: false,
+      tasks: [openTask(1, { workDomain: "backend" })],
+      claims: [],
+      topology,
+      statusIndex: new Map(),
+    });
+    expect(report.stalled).toHaveLength(0);
+    expect(report.unserviceable.map((f) => f.taskId)).toEqual(["TASK-0001"]);
+  });
 });
 
 describe("runtime watchdogTick (fix §21)", () => {

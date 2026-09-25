@@ -48,7 +48,11 @@ export function createPolicyService(): PolicyService {
 
       // 3. Scheduling gate: availableAt is a durable one-shot due time.
       const now = opts?.now;
-      if (meta.availableAt !== undefined && now !== undefined && now < meta.availableAt) {
+      if (
+        meta.availableAt !== undefined &&
+        now !== undefined &&
+        Date.parse(now) < Date.parse(meta.availableAt)
+      ) {
         return deny("not_due", `task ${meta.id} is not due until ${meta.availableAt}`);
       }
 

@@ -20,6 +20,12 @@ export interface LivenessInput {
   nowIso: string;
   /** Stall threshold in ms (swarm.yaml liveness.warningAfterMs). */
   warningAfterMs: number;
+  /**
+   * Global fallback gate (swarm.yaml scheduling.fallbackEnabled). MUST match
+   * the claim-time resolver policy or the watchdog would report serviceable
+   * work the resolver then denies (policy drift).
+   */
+  fallbackEnabled?: boolean;
   tasks: TaskDocument[];
   claims: ClaimRecord[];
   topology: ActiveTopology;
@@ -70,6 +76,7 @@ export function evaluateLiveness(input: LivenessInput): LivenessReport {
       claimExists: false,
       sourceClaimantInstanceIds: [],
       statusIndex: input.statusIndex,
+      ...(input.fallbackEnabled !== undefined ? { fallbackEnabled: input.fallbackEnabled } : {}),
     });
     if (view.state === "scheduled" || view.state === "blocked" || view.state === "waiting_dependencies") {
       continue;

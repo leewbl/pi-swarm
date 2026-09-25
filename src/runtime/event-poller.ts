@@ -130,13 +130,19 @@ export function createEventPoller(deps: EventPollerDeps): EventPoller {
 
       if (matched.length > 0) {
         await onMatch(matched);
-        // Delivery succeeded: commit the dedupe window and the counters.
-        for (const id of stagedIds) markSeen(id);
         consumedCount += matched.length;
         logger.debug("events matched", { count: matched.length });
       }
       if (dirty) {
         await cursorStore.save(identity.instanceId, { streams: cursors });
+      }
+      // Commit the dedupe window only after BOTH delivery and cursor
+      // persistence succeeded (fix §18): if cursor.save throws after a
+      // successful onMatch, the next poll rereads the events (cursor not
+      // advanced) and the seen-set must NOT suppress them — committing seen
+      // earlier would permanently skip delivered-once-but-unpersisted events.
+      if (matched.length > 0) {
+        for (const id of stagedIds) markSeen(id);
       }
       return matched;
     },

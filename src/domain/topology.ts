@@ -38,12 +38,18 @@ export interface ActiveTopology {
   /** Instance ids excluded from resolution (stale presence), for diagnostics. */
   suspectInstanceIds: string[];
 }
-
 export interface BuildTopologyOptions {
   /** ISO now; defaults are not allowed here — callers own time. */
   nowIso: string;
   /** Staleness window in ms (swarm.yaml runtime.presenceStaleMs). */
   presenceStaleMs: number;
+  /**
+   * Optional local-host PID probe: a fresh heartbeat whose process is
+   * confirmed DEAD must not keep holding a specialist boundary until
+   * presenceStaleMs passes — the crash window would otherwise close
+   * fallback behind a false specialist. Undefined = no probe (pure tests).
+   */
+  isProcessAlive?: (pid: number) => boolean;
 }
 
 function push<K>(map: Map<K, ActiveAgent[]>, key: K, agent: ActiveAgent): void {
@@ -82,6 +88,12 @@ export function buildActiveTopology(
     if (!manifest) continue;
     const fresh = nowMs - Date.parse(record.heartbeatAt) <= opts.presenceStaleMs;
     if (!fresh) {
+      suspectInstanceIds.push(record.instanceId);
+      continue;
+    }
+    if (opts.isProcessAlive !== undefined && !opts.isProcessAlive(record.pid)) {
+      // Fresh heartbeat but confirmed-dead process (crash window): exclude
+      // from coverage and surface as suspect, never as a false specialist.
       suspectInstanceIds.push(record.instanceId);
       continue;
     }

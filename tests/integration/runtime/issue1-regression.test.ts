@@ -194,10 +194,10 @@ describe("Issue #1 regression: durable obligation resolves without a user ping",
     await coordinator.runtime.start();
     const candidates = await coordinator.runtime.scanTasksOnce();
     expect(candidates.map((c) => c.taskId)).toContain(obligationId);
-    // Wake delivered as actionable (idle + actionable -> triggered turn).
+    // Wake delivered as actionable (follow-up that triggers a turn).
     expect(coordinator.wake.deliveries.length).toBeGreaterThan(0);
     const triggered = coordinator.wake.deliveries.find(
-      (d) => d.delivery.deliverAs === "aside" && "triggerTurn" in d.delivery,
+      (d) => d.delivery.deliverAs === "followUp" && "triggerTurn" in d.delivery,
     );
     expect(triggered).toBeDefined();
     await coordinator.runtime.stop();

@@ -33,6 +33,7 @@ import {
 import type { RuntimeHandle, RuntimeInitArgs } from "./binding.js";
 import { renderDoctorReport, runDoctor } from "./doctor.js";
 import { buildActiveTopology } from "../domain/topology.js";
+import { isProcessAlive as probeProcessAlive } from "../domain/process-alive.js";
 import { classifyTaskServiceability } from "../domain/serviceability.js";
 import { renderUnserviceable } from "../domain/serviceability.js";
 import { formatZodError } from "./tools.js";
@@ -223,6 +224,9 @@ export async function bindRole(
     taskStore: ownStack.stores.task,
     manifestStore: ownStack.stores.manifest,
     claimList: () => ownStack.stores.claim.list(),
+    ...(deps.isProcessAlive !== undefined
+      ? { isProcessAlive: deps.isProcessAlive }
+      : {}),
     eventStore: ownStack.stores.event,
     cursorStore: ownStack.stores.cursor,
     presenceStore: ownStack.stores.presence,
@@ -327,6 +331,7 @@ async function serviceabilityBlock(stack: SwarmStack, nowIsoValue: string): Prom
   const topology = buildActiveTopology(presence, manifests, {
     nowIso: nowIsoValue,
     presenceStaleMs: stack.config.runtime.presenceStaleMs,
+    isProcessAlive: probeProcessAlive,
   });
   const statusIndex = new Map(tasks.map((t) => [t.metadata.id, t.metadata.status] as const));
   const claimed = new Set(claims.map((c) => c.taskId));
@@ -348,6 +353,7 @@ async function serviceabilityBlock(stack: SwarmStack, nowIsoValue: string): Prom
       claimExists: claimed.has(task.metadata.id),
       sourceClaimantInstanceIds: [],
       statusIndex,
+      fallbackEnabled: stack.config.scheduling.fallbackEnabled,
     });
     counts[view.state] = (counts[view.state] ?? 0) + 1;
     if (view.state === "unserviceable") {

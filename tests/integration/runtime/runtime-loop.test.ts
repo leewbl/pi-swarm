@@ -69,7 +69,7 @@ describe("SwarmRuntime over a real file workspace", () => {
     expect(wake.deliveries).toHaveLength(1);
     expect(wake.deliveries[0]!.message.kind).toBe("actionable");
     expect(wake.deliveries[0]!.message.body).toContain("1 review.completed (direct)");
-    expect(wake.deliveries[0]!.delivery).toEqual({ deliverAs: "aside", triggerTurn: true });
+    expect(wake.deliveries[0]!.delivery).toEqual({ deliverAs: "followUp", triggerTurn: true });
   });
 
   it("scanTasksOnce() surfaces a new task, then stays quiet until it changes", async () => {
@@ -167,7 +167,7 @@ describe("SwarmRuntime over a real file workspace", () => {
     await runtime.pollEventsOnce();
 
     expect(wake.deliveries).toHaveLength(1);
-    expect(wake.deliveries[0]!.delivery).toEqual({ deliverAs: "followUp" });
+    expect(wake.deliveries[0]!.delivery).toEqual({ deliverAs: "followUp", triggerTurn: true });
 
     await runtime.stop();
   });

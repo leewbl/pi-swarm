@@ -131,12 +131,12 @@ const taskAbandonParams = z.object({
   claimId: z.string().min(1),
   reason: z.string().optional(),
 });
-
 const taskBlockParams = z.object({
   taskId: z.string().regex(TASK_ID_RE),
   claimId: z.string().min(1),
   reason: z.string().min(1),
-  blockedOn: z.array(z.string().regex(TASK_ID_RE)).optional(),
+  /** At least one durable obligation: blocking without one recreates the silent-wait deadlock. */
+  blockedOn: z.array(z.string().regex(TASK_ID_RE)).min(1),
 });
 const taskUnblockParams = z.object({
   taskId: z.string().regex(TASK_ID_RE),
@@ -434,9 +434,7 @@ export function registerSwarmTools(pi: PiLike, getSession: GetToolSession): void
             session.identity,
             {
               reason: parsed.value.reason,
-              ...(parsed.value.blockedOn !== undefined
-                ? { blockedOn: parsed.value.blockedOn }
-                : {}),
+              blockedOn: parsed.value.blockedOn,
             },
           ),
         );

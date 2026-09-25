@@ -223,6 +223,14 @@ async function checkObligations(stack: SwarmStack, add: AddFinding): Promise<voi
   for (const task of tasks) {
     const meta = task.metadata;
     if (meta.status !== "blocked") continue;
+    if (meta.blockedOn.length === 0) {
+      add(
+        "error",
+        "obligations",
+        `blocked task ${meta.id} has no durable obligation in blockedOn`,
+        "this is a silent wait; unblock it or block it on real durable work (swarm_request_create + swarm_task_block)",
+      );
+    }
     for (const obligation of meta.blockedOn) {
       if (!statusIndex.has(obligation)) {
         add(
@@ -261,6 +269,7 @@ async function checkServiceability(
   stack: SwarmStack,
   add: AddFinding,
   nowIsoValue: string,
+  isProcessAlive: (pid: number) => boolean,
 ): Promise<void> {
   const [tasks, presence, manifests, claims] = await Promise.all([
     stack.stores.task.list(),
@@ -282,6 +291,7 @@ async function checkServiceability(
   const topology = buildActiveTopology(presence, manifests, {
     nowIso: nowIsoValue,
     presenceStaleMs: stack.config.runtime.presenceStaleMs,
+    isProcessAlive,
   });
   const statusIndex = new Map(tasks.map((t) => [t.metadata.id, t.metadata.status] as const));
   const claimed = new Set(claims.map((c) => c.taskId));
@@ -291,6 +301,7 @@ async function checkServiceability(
       claimExists: claimed.has(task.metadata.id),
       sourceClaimantInstanceIds: [],
       statusIndex,
+      fallbackEnabled: stack.config.scheduling.fallbackEnabled,
     });
     if (view.state === "unserviceable") {
       add(
@@ -304,6 +315,7 @@ async function checkServiceability(
   const report = evaluateLiveness({
     nowIso: nowIsoValue,
     warningAfterMs: stack.config.liveness.warningAfterMs,
+    fallbackEnabled: stack.config.scheduling.fallbackEnabled,
     tasks,
     claims,
     topology,
@@ -333,7 +345,7 @@ export async function runDoctor(stack: SwarmStack, opts: DoctorOptions = {}): Pr
     ["tasks", () => checkTasks(stack, add)],
     ["consistency", () => checkConsistency(stack, add)],
     ["obligations", () => checkObligations(stack, add)],
-    ["serviceability", () => checkServiceability(stack, add, now())],
+    ["serviceability", () => checkServiceability(stack, add, now(), isProcessAlive)],
     ["events", () => checkStreams(stack, add)],
     ["cursors", () => checkCursors(stack, add)],
     ["blackboard", () => checkBlackboardConfig(stack, add)],

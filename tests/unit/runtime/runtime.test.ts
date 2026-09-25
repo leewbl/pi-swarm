@@ -152,7 +152,7 @@ describe("SwarmRuntime timer-free loop drives", () => {
     const { message, delivery } = wake.deliveries[0]!;
     expect(message.kind).toBe("actionable");
     expect(message.title).toBe("SWARM INBOX — 2 events");
-    expect(delivery).toEqual({ deliverAs: "aside", triggerTurn: true });
+    expect(delivery).toEqual({ deliverAs: "followUp", triggerTurn: true });
 
     await runtime.pollEventsOnce();
     expect(wake.deliveries).toHaveLength(1);
@@ -169,7 +169,7 @@ describe("SwarmRuntime timer-free loop drives", () => {
     const { message, delivery } = wake.deliveries[0]!;
     expect(message.kind).toBe("actionable");
     expect(message.body).toContain("TASK-0001 [P70] Implement OAuth — tasks/TASK-0001.md");
-    expect(delivery).toEqual({ deliverAs: "aside", triggerTurn: true });
+    expect(delivery).toEqual({ deliverAs: "followUp", triggerTurn: true });
 
     // Unchanged task stays suppressed after the delivered wake flushed it.
     await runtime.scanTasksOnce();

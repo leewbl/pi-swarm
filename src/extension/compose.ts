@@ -22,6 +22,7 @@ import { createTaskService } from "../domain/task-service.js";
 import { createRecoveryService } from "../domain/recovery-service.js";
 import { createEventService } from "../domain/event-service.js";
 import { createObligationService } from "../domain/obligation-service.js";
+import { isProcessAlive } from "../domain/process-alive.js";
 import type { ObligationService } from "../domain/obligation-service.js";
 import { createSwarmRuntime } from "../runtime/runtime.js";
 import { newIdentity } from "../runtime/identity.js";
@@ -98,6 +99,7 @@ export async function buildSwarmStack(
     presenceStore: stores.presence,
     manifestStore: stores.manifest,
     config,
+    isProcessAlive,
     now: nowIso,
   });
   const services: SwarmStackServices = {

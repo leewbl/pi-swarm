@@ -167,11 +167,14 @@ export default function piSwarmExtension(pi: PiLike): void {
   pi.on(
     "session_stop",
     safeHook("session_stop", () => {
-      // Settle/idle candidate: only when the host itself reports idle.
+      // Host settle boundary (fix §20/§33): only when the host itself
+      // reports idle — an immediate reconciliation point (presence truth +
+      // both polling loops + inbox flush) instead of waiting for the next
+      // interval tick.
       const ctx = ctxRef.get();
       const idle = ctx?.isIdle?.();
       if (idle === false) return undefined;
-      void Promise.resolve(getActiveBinding()?.runtime.markIdle?.()).catch(() => undefined);
+      void Promise.resolve(getActiveBinding()?.runtime.settle?.()).catch(() => undefined);
       return undefined;
     }, onHookError),
   );

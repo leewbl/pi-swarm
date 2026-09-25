@@ -196,7 +196,28 @@ describe("topology regression matrix (fix §30)", () => {
     );
     expect(resolution.state).toBe("unserviceable");
   });
+});
 
+describe("availableAt millisecond boundary (real time comparison)", () => {
+  it("treats a millisecond now past a no-ms availableAt as due (string compare would invert it)", () => {
+    const topology = topologyOf([{ role: "backend" }]);
+    // String comparison would say "18:00:00.100Z" < "18:00:00Z" ('.' < 'Z')
+    // and wrongly consider the task not due; real time says it IS due.
+    const resolution = resolveTaskCandidates(
+      task({ workDomain: "backend", availableAt: "2026-09-24T18:00:00Z" }),
+      topology,
+      {
+        nowIso: "2026-09-24T18:00:00.100Z",
+        claimExists: false,
+        sourceClaimantInstanceIds: [],
+        statusIndex: emptyStatusIndex,
+      },
+    );
+    expect(resolution.state).toBe("primary");
+  });
+});
+
+describe("topology regression matrix continued", () => {
   it("stale presence agents are excluded from resolution and flagged suspect", () => {
     const topology = topologyOf([
       { role: "backend", stale: true },
@@ -208,6 +229,37 @@ describe("topology regression matrix (fix §30)", () => {
     expect(resolution.state).toBe("fallback");
     expect(roles(resolution)).toEqual(["tester"]);
   });
+  it("a dead PID with a fresh heartbeat does not hold the specialist boundary (PID probe)", () => {
+    const backendPid = makeIdentity("backend").pid;
+    const probed = buildActiveTopology(
+      [
+        makePresence({ identity: makeIdentity("backend"), heartbeatAt: NOW }),
+        makePresence({ identity: makeIdentity("tester", 1), heartbeatAt: NOW }),
+      ],
+      [
+        manifestDoc({ role: "backend", primary: ["backend"] }),
+        manifestDoc({ role: "tester" }),
+      ],
+      {
+        nowIso: NOW,
+        presenceStaleMs: STALE_MS,
+        isProcessAlive: (pid) => pid !== backendPid,
+      },
+    );
+    expect(probed.agents.map((a) => a.role)).toEqual(["tester"]);
+    expect(probed.suspectInstanceIds).toHaveLength(1);
+    // Without the probe the crash window would keep backend primary and
+    // close fallback; with it the tester may fall back into backend work.
+    const resolution = resolveTaskCandidates(task({ workDomain: "backend" }), probed, {
+      nowIso: NOW,
+      claimExists: false,
+      sourceClaimantInstanceIds: [],
+      statusIndex: emptyStatusIndex,
+    });
+    expect(resolution.state).toBe("fallback");
+    expect(roles(resolution)).toEqual(["tester"]);
+  });
+
 
   it("task-level fallback opt-out closes the fallback tier", () => {
     const topology = topologyOf([{ role: "coordinator" }]);

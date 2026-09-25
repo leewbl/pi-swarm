@@ -91,7 +91,7 @@ omp -e /path/to/pi-swarm
 | `swarm_task_complete` | 完成任务(done),可带摘要与产出引用;自动恢复被它解除阻塞的父任务 |
 | `swarm_task_fail` | 以结构化原因标记失败 |
 | `swarm_task_abandon` | 放弃持有任务,交由恢复流程 |
-| `swarm_task_block` | 将 in_progress 任务阻塞在持久义务上(保留认领) |
+| `swarm_task_block` | 将 in_progress 任务阻塞在持久义务上(保留认领;`blockedOn` 至少一项,义务须真实存在) |
 | `swarm_task_unblock` | 义务全部完成后恢复 blocked 任务 |
 | `swarm_task_reopen` | 将 abandoned 任务重新打开 |
 | `swarm_request_create` | 创建持久协调义务(决策/评审/审批…)= 普通任务 + origin 元数据,幂等 |
@@ -139,7 +139,7 @@ open ──原子认领──▶ claimed ──显式 start──▶ in_progress
 6. 自动孤儿回收要求「心跳过期 且 进程确认死亡」双条件;活着但可疑的认领者只暴露、不自动回收。
 7. 扩展重启后能从 `.pi/swarm/` 完整重建可行动的运行时状态。
 
-**运行时双循环** —— 每个会话内嵌一个扩展实例:任务池循环扫描/过滤可认领任务;事件循环按游标消费各生产者流;两者汇入收件箱,由唤醒调度器批量投递 —— 仅在会话空闲时 `sendMessage` 触发回合,避免打扰进行中的工作。
+**运行时双循环** —— 每个会话内嵌一个扩展实例:任务池循环扫描/过滤可认领任务;事件循环按游标消费各生产者流;两者汇入收件箱,由唤醒调度器批量投递 —— 可行动的工作统一以 `followUp` + 触发回合投递(要求代理完成的后续回合,不作为环境性 aside),仅在活跃时的信息性广播以 aside 搭乘步骤边界;`session_stop` 是立即对账点(同步 presence 真值 + 双循环 + 收件箱冲刷),`agent_end` 不作为权威 idle。
 
 ## `.pi/swarm/` 目录
 

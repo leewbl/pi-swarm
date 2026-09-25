@@ -82,4 +82,15 @@ describe("presence sync (fix §20)", () => {
     expect(wake.deliveries[0].message.kind).toBe("actionable");
     await runtime.stop();
   });
+
+  it("settle() reconciles immediately: presence truth + both polls + inbox flush, no timers", async () => {
+    const { runtime, presenceStore, identity, taskService, wake } = setup(true);
+    await taskService.addTask({ title: "Work" });
+    await runtime.start();
+    await runtime.settle();
+    const record = presenceStore.records.get(identity.instanceId);
+    expect(record?.state).toBe("idle"); // host truth synced
+    expect(wake.deliveries.length).toBeGreaterThan(0); // task surfaced + flushed NOW
+    await runtime.stop();
+  });
 });

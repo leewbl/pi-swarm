@@ -83,8 +83,13 @@ async function taskInStatus(h: Harness, status: TaskStatus): Promise<{ taskId: s
     if (!failed.ok) throw new Error("drive fail failed");
   }
   if (status === "blocked") {
-    const blocked = await h.service.block(taskId, claimId, h.backend, { reason: "driving" });
+    const obligationId = await newTask(h);
+    const blocked = await h.service.block(taskId, claimId, h.backend, {
+      reason: "driving",
+      blockedOn: [obligationId],
+    });
     if (!blocked.ok) throw new Error("drive block failed");
+    (h as Harness & { obligationId?: string }).obligationId = obligationId;
   }
   if (status === "abandoned") {
     const abandoned = await h.service.abandon(taskId, claimId, h.backend);
@@ -120,12 +125,22 @@ const ATTEMPTS: Record<Exclude<TaskStatus, "open">, Attempt> = {
     return { ok: r.ok, code: r.ok ? undefined : r.code };
   },
   blocked: async (h, taskId, claimId) => {
-    const r = await h.service.block(taskId, claimId, h.backend, { reason: "attempt" });
+    const obligationId = await newTask(h);
+    const r = await h.service.block(taskId, claimId, h.backend, {
+      reason: "attempt",
+      blockedOn: [obligationId],
+    });
     return { ok: r.ok, code: r.ok ? undefined : r.code };
   },
 };
 
 const UNBLOCK: Attempt = async (h, taskId, claimId) => {
+  // The obligation is force-completed (bypassing complete()'s auto-resume)
+  // so this exercises the manual unblock path.
+  const obligationId = (h as Harness & { obligationId?: string }).obligationId;
+  if (obligationId !== undefined) {
+    await h.taskStore.forceStatus(obligationId, "done", h.clock.now());
+  }
   const r = await h.service.unblock(taskId, claimId, h.backend);
   return { ok: r.ok, code: r.ok ? undefined : r.code };
 };
@@ -198,6 +213,31 @@ describe("task lifecycle state machine", () => {
   });
 });
 
+
+describe("durable obligation enforcement", () => {
+  it("rejects block without obligations (silent-wait deadlock guard)", async () => {
+    const h = setup();
+    const { taskId, claimId } = await taskInStatus(h, "in_progress");
+    const missing = await h.service.block(taskId, claimId, h.backend, { reason: "waiting for somebody" });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.code).toBe("invalid_input");
+    expect((await h.taskStore.get(taskId))?.metadata.status).toBe("in_progress");
+
+    const obligationId = await newTask(h);
+    const valid = await h.service.block(taskId, claimId, h.backend, {
+      reason: "needs decision",
+      blockedOn: [obligationId],
+    });
+    expect(valid.ok).toBe(true);
+
+    const ghost = await h.service.block(taskId, claimId, h.backend, {
+      reason: "ghost",
+      blockedOn: ["TASK-9999"],
+    });
+    expect(ghost.ok).toBe(false);
+    if (!ghost.ok) expect(ghost.code).toBe("invalid_input");
+  });
+});
 describe("claim ownership validation", () => {
   it("rejects a wrong claimId with not_claim_owner and leaves the task untouched", async () => {
     const h = setup();

@@ -54,7 +54,7 @@ export function classifyTaskServiceability(
   }
 
   // open tasks: scheduling and obligation gates first, then resolution.
-  if (meta.availableAt !== undefined && ctx.nowIso < meta.availableAt) {
+  if (meta.availableAt !== undefined && Date.parse(ctx.nowIso) < Date.parse(meta.availableAt)) {
     return { ...base, state: "scheduled", reason: `due at ${meta.availableAt}` };
   }
   const pendingObligation = meta.blockedOn.find((id) => ctx.statusIndex.get(id) !== "done");

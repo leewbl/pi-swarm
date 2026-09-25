@@ -57,6 +57,8 @@ export interface SwarmRuntimeDeps {
   manifestStore?: ManifestStore;
   /** Optional claim source for the liveness watchdog (defaults: none). */
   claimList?: () => Promise<ClaimRecord[]>;
+  /** Optional local-host PID probe for the watchdog topology. */
+  isProcessAlive?: (pid: number) => boolean;
   timers?: TimerPort;
   now?: () => string;
   logger?: Logger;
@@ -188,7 +190,7 @@ export class SwarmRuntime {
     await this.presence.setBusy();
   }
 
-  /** Presence -> idle (call when the agent's turn ends). */
+  /** Presence -> idle (call when the host settles, e.g. session_stop). */
   async markIdle(): Promise<void> {
     await this.presence.setIdle();
   }
@@ -200,6 +202,17 @@ export class SwarmRuntime {
    */
   async syncPresence(): Promise<void> {
     await this.presence.beat(this.wake.isIdle() ? "idle" : "busy");
+  }
+
+  /**
+   * Host settle boundary (fix §20/§33): session_stop is an immediate
+   * reconciliation point — sync presence truth, drain both polling loops,
+   * and flush the inbox, instead of waiting for the next interval tick.
+   */
+  async settle(): Promise<void> {
+    await this.syncPresence();
+    await this.pollEventsOnce();
+    await this.scanTasksOnce();
   }
 
   /**
@@ -229,11 +242,15 @@ export class SwarmRuntime {
     const topology = buildActiveTopology(presence, manifests, {
       nowIso: now,
       presenceStaleMs: this.config.runtime.presenceStaleMs,
+      ...(this.deps.isProcessAlive !== undefined
+        ? { isProcessAlive: this.deps.isProcessAlive }
+        : {}),
     });
     const statusIndex = new Map(tasks.map((t) => [t.metadata.id, t.metadata.status] as const));
     const report = evaluateLiveness({
       nowIso: now,
       warningAfterMs: this.config.liveness.warningAfterMs,
+      fallbackEnabled: this.config.scheduling.fallbackEnabled,
       tasks,
       claims,
       topology,
