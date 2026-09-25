@@ -2,55 +2,58 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Pi Swarm 架构",
+    "title": "Pi Swarm 架构(结构化修复后)",
     "locale": "zh-CN",
     "quality_profile": "showcase",
     "output": "pi-swarm-architecture.html",
     "viewBox": [
-      1380,
-      560
+      1370,
+      660
     ],
     "repository": {
       "url": "https://github.com/leewbl/pi-swarm",
       "provider": "github",
       "link_mode": "web",
-      "revision": "95e8f006f0bb025026e5be11f2ae8d5a56b74777"
+      "revision": "225c9ce76d938bf0158500f763a51fe29479f4c1"
     },
     "views": [
       {
-        "id": "task-path",
-        "label": "任务主路径",
+        "id": "resolution-path",
+        "label": "认领主路径",
         "focus": [
           "coordinator",
           "backend",
           "runtime",
+          "resolver",
+          "taskpool",
+          "claims",
+          "presence",
+          "manifests"
+        ],
+        "note": "presence + manifests 构建活跃拓扑(PID probe)→ Boundary Gate 硬门控判定资格 → 认领时重解析 + O_EXCL 独占"
+      },
+      {
+        "id": "obligation-loop",
+        "label": "义务闭环",
+        "focus": [
+          "tester",
+          "runtime",
+          "resolver",
           "taskpool",
           "claims"
         ],
-        "note": "协调者创建任务;后端扫描过滤后 O_EXCL 原子认领;claims/ 是所有权唯一事实"
+        "note": "期望他人行动必落持久任务;blocked 阻塞于 blockedOn 义务,完成后自动恢复;验证矛盾创建 rework 而不改写 done 历史"
       },
       {
-        "id": "events-knowledge",
-        "label": "事件与知识",
+        "id": "reliability",
+        "label": "可靠性与活性",
         "focus": [
           "runtime",
           "events",
-          "blackboard",
-          "artifacts",
-          "tester"
+          "presence",
+          "blackboard"
         ],
-        "note": "单写者 JSONL 流与黑板知识;大产出进 artifacts/ 按路径引用"
-      },
-      {
-        "id": "policy-recovery",
-        "label": "策略与恢复",
-        "focus": [
-          "manifests",
-          "runtimestate",
-          "claims",
-          "runtime"
-        ],
-        "note": "清单驱动权限;心跳过期且进程确认死亡后自动恢复孤儿任务"
+        "note": "事件仅加速(direct 默认 actionable,seen 在 cursor 之后提交);watchdog 兜底重浮现停滞工作;session_stop 立即对账"
       }
     ]
   },
@@ -59,14 +62,14 @@
       "id": "coordinator",
       "type": "backend",
       "label": "Coordinator 会话",
-      "sublabel": "分解目标 · 创建任务",
-      "tag": "从不认领任务",
+      "sublabel": "planning · decision",
+      "tag": "可选角色 · 可回退",
       "pos": [
-        40,
+        36,
         116
       ],
       "size": [
-        190,
+        180,
         68
       ],
       "sources": [
@@ -80,13 +83,13 @@
       "id": "backend",
       "type": "backend",
       "label": "Backend 会话",
-      "sublabel": "扫描 · 原子认领 · 交付",
+      "sublabel": "主 backend · 副 decision",
       "pos": [
-        40,
+        36,
         264
       ],
       "size": [
-        190,
+        180,
         68
       ],
       "sources": [
@@ -100,13 +103,14 @@
       "id": "tester",
       "type": "backend",
       "label": "Tester 会话",
-      "sublabel": "验证 · 评审 · 广播",
+      "sublabel": "验证矛盾 → rework",
+      "tag": "阻塞于持久义务",
       "pos": [
-        40,
+        36,
         412
       ],
       "size": [
-        190,
+        180,
         68
       ],
       "sources": [
@@ -121,13 +125,13 @@
       "type": "backend",
       "label": "Pi Swarm 扩展运行时",
       "sublabel": "每会话一个实例",
-      "tag": "任务池 + 事件双循环",
+      "tag": "双循环 + watchdog + settle",
       "pos": [
         300,
-        100
+        88
       ],
       "size": [
-        220,
+        210,
         380
       ],
       "sources": [
@@ -142,17 +146,42 @@
       ]
     },
     {
+      "id": "resolver",
+      "type": "security",
+      "label": "拓扑解析器",
+      "sublabel": "candidate-resolver · Boundary Gate",
+      "tag": "硬门控 · 非评分竞争",
+      "pos": [
+        576,
+        196
+      ],
+      "size": [
+        204,
+        118
+      ],
+      "sources": [
+        {
+          "path": "src/domain/candidate-resolver.ts",
+          "label": "边界门解析"
+        },
+        {
+          "path": "src/domain/topology.ts",
+          "label": "活跃拓扑"
+        }
+      ]
+    },
+    {
       "id": "taskpool",
       "type": "database",
       "label": "任务池 tasks/",
-      "sublabel": "Markdown + front matter",
-      "tag": "拉取式 · 持久工作源",
+      "sublabel": "workDomain · blockedOn",
+      "tag": "持久工作 + 义务源",
       "pos": [
-        770,
+        852,
         100
       ],
       "size": [
-        220,
+        200,
         68
       ],
       "sources": [
@@ -169,11 +198,11 @@
       "sublabel": "O_EXCL 独占创建",
       "tag": "所有权唯一事实",
       "pos": [
-        770,
-        182
+        852,
+        190
       ],
       "size": [
-        220,
+        200,
         68
       ],
       "sources": [
@@ -188,19 +217,19 @@
       "type": "messagebus",
       "label": "事件流 events/",
       "sublabel": "每实例单写 JSONL",
-      "tag": "通知 · at-least-once",
+      "tag": "加速提示 · 非所有权",
       "pos": [
-        770,
-        264
+        852,
+        296
       ],
       "size": [
-        220,
+        200,
         68
       ],
       "sources": [
         {
-          "path": "src/storage/event-store.ts",
-          "label": "事件存取"
+          "path": "src/runtime/event-poller.ts",
+          "label": "游标消费"
         }
       ]
     },
@@ -211,11 +240,11 @@
       "sublabel": "Markdown 共享知识",
       "tag": "单写者文档策略",
       "pos": [
-        770,
-        346
+        852,
+        472
       ],
       "size": [
-        220,
+        200,
         68
       ],
       "sources": [
@@ -232,11 +261,11 @@
       "sublabel": "大型任务产出",
       "tag": "按路径引用",
       "pos": [
-        1030,
+        1108,
         100
       ],
       "size": [
-        220,
+        200,
         68
       ],
       "sources": [
@@ -247,38 +276,17 @@
       ]
     },
     {
-      "id": "runtimestate",
-      "type": "database",
-      "label": "运行时状态 runtime/",
-      "sublabel": "presence 心跳 · cursors",
-      "tag": "崩溃后可重建",
-      "pos": [
-        770,
-        428
-      ],
-      "size": [
-        220,
-        68
-      ],
-      "sources": [
-        {
-          "path": "src/storage/presence-store.ts",
-          "label": "presence"
-        }
-      ]
-    },
-    {
       "id": "manifests",
       "type": "security",
       "label": "角色清单 agents/",
-      "sublabel": "六内置角色 + 自定义",
-      "tag": "能力 · 订阅 · 读写策略",
+      "sublabel": "domains 主/副声明",
+      "tag": "fallback 声明",
       "pos": [
-        1030,
-        410
+        852,
+        380
       ],
       "size": [
-        220,
+        200,
         68
       ],
       "sources": [
@@ -287,17 +295,43 @@
           "label": "清单示例"
         }
       ]
+    },
+    {
+      "id": "presence",
+      "type": "database",
+      "label": "运行时状态 runtime/",
+      "sublabel": "presence 心跳 + cursors",
+      "tag": "宿主 idle 真值 · PID probe",
+      "pos": [
+        1108,
+        472
+      ],
+      "size": [
+        200,
+        68
+      ],
+      "sources": [
+        {
+          "path": "src/storage/presence-store.ts",
+          "label": "presence"
+        },
+        {
+          "path": "src/domain/liveness-service.ts",
+          "label": "活性判定"
+        }
+      ]
     }
   ],
   "boundaries": [
     {
       "kind": "region",
-      "label": "oh-my-pi 会话 ×N(无监督 LLM · 互不直调)",
+      "label": "oh-my-pi 会话 ×N(域内核 host-free · 无监督 LLM)",
       "wraps": [
         "coordinator",
         "backend",
         "tester",
-        "runtime"
+        "runtime",
+        "resolver"
       ]
     },
     {
@@ -309,8 +343,8 @@
         "events",
         "blackboard",
         "artifacts",
-        "runtimestate",
-        "manifests"
+        "manifests",
+        "presence"
       ]
     }
   ],
@@ -326,50 +360,50 @@
       "from": "backend",
       "to": "runtime",
       "label": "原子认领",
-      "labelDy": 10
+      "labelDy": 2
     },
     {
       "id": "tester-runtime",
       "from": "tester",
       "to": "runtime",
-      "label": "完成 · 广播"
+      "label": "验证 · rework"
     },
     {
-      "id": "runtime-taskpool",
+      "id": "runtime-resolver",
       "from": "runtime",
+      "to": "resolver",
+      "label": "资格判定"
+    },
+    {
+      "id": "resolver-taskpool",
+      "from": "resolver",
       "to": "taskpool",
-      "label": "扫描 · 过滤可认领",
-      "labelSegment": 2
+      "label": "workDomain 解析",
+      "fromSide": "top",
+      "toSide": "left"
     },
     {
-      "id": "runtime-claims",
-      "from": "runtime",
+      "id": "resolver-claims",
+      "from": "resolver",
       "to": "claims",
-      "label": "O_EXCL 认领/完结",
-      "variant": "emphasis",
-      "labelSegment": 2
+      "label": "认领重解析",
+      "variant": "emphasis"
     },
     {
       "id": "runtime-events",
       "from": "runtime",
       "to": "events",
-      "label": "追加 + 游标消费",
+      "label": "追加 · 游标",
       "labelSegment": 2,
-      "labelDy": 14
+      "labelDy": 24
     },
     {
       "id": "runtime-blackboard",
       "from": "runtime",
       "to": "blackboard",
       "label": "策略内读写",
-      "labelSegment": 2
-    },
-    {
-      "id": "runtime-runtimestate",
-      "from": "runtime",
-      "to": "runtimestate",
-      "label": "心跳 · 游标持久化",
-      "labelSegment": 2
+      "labelSegment": 2,
+      "labelDy": 18
     },
     {
       "id": "runtime-artifacts",
@@ -380,12 +414,12 @@
       "toSide": "top",
       "via": [
         [
-          410,
-          72
+          405,
+          48
         ],
         [
-          1140,
-          72
+          1208,
+          48
         ]
       ]
     },
@@ -393,42 +427,54 @@
       "id": "manifests-runtime",
       "from": "manifests",
       "to": "runtime",
-      "label": "角色契约 · 权限校验",
+      "label": "拓扑输入 · domains",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelAt": [
+        690,
+        394
+      ]
+    },
+    {
+      "id": "presence-runtime",
+      "from": "presence",
+      "to": "runtime",
+      "label": "心跳 · PID probe · 宿主真值",
       "fromSide": "bottom",
       "toSide": "bottom",
       "via": [
         [
-          1140,
-          510
+          1208,
+          620
         ],
         [
-          410,
-          510
+          405,
+          620
         ]
       ],
       "labelAt": [
-        775,
-        510
+        810,
+        620
       ]
     }
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "协调模型",
+      "title": "拓扑感知调度",
       "items": [
-        "无监督 LLM,代理之间零直接调用",
-        "任务池是持久工作源,事件只是通知",
-        "收到事件不等于获得任务所有权"
+        "Boundary Gate 硬门控:Primary 在线时其他角色不可越界",
+        "无 Primary 开 Secondary,再无且允许时开 Fallback",
+        "单代理也可回退推进;不可服务(UNSERVICEABLE)显式暴露"
       ]
     },
     {
       "dot": "emerald",
-      "title": "扩展运行时",
+      "title": "持久义务与活性",
       "items": [
-        "每个会话一个扩展实例,双循环独立运行",
-        "任务池循环只发现工作,认领由 LLM 决定",
-        "唤醒调度批量投递收件箱,空闲才触发回合"
+        "期望他人行动必须落为持久任务(swarm_request_create),事件只做加速",
+        "blocked 绑定 blockedOn 义务,义务完成后自动恢复;验证矛盾创建 rework",
+        "availableAt 持久调度门;watchdog 检测停滞的可服务工作并重浮现"
       ]
     },
     {
@@ -436,8 +482,8 @@
       "title": "文件原生与恢复",
       "items": [
         "YAML / Markdown / JSONL 即全部状态,零外部服务",
-        "单机原子文件原语解决认领竞争",
-        "心跳过期且进程确认死亡才自动恢复"
+        "O_EXCL 认领,claims/ 是所有权唯一事实;认领时按当前拓扑重解析",
+        "presence 跟随宿主 idle 真值;新鲜心跳 + 死 PID 不占专家边界"
       ]
     }
   ]
