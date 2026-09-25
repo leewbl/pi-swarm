@@ -172,6 +172,6 @@ pnpm test        # vitest run(单元 / 集成 / 多进程并发认领)
 
 ## 设计文档
 
-- [`pi-swarm-1.0/pi-swarm-1.0-architecture.md`](pi-swarm-1.0/pi-swarm-1.0-architecture.md) —— 架构、协议与不变量全量规范
-- [`pi-swarm-1.0/pi-swarm-1.0-prd.md`](pi-swarm-1.0/pi-swarm-1.0-prd.md) —— 需求与测试计划
+- [`docs/history/pi-swarm-1.0-architecture.md`](docs/history/pi-swarm-1.0-architecture.md) —— 1.0 初始架构、协议与不变量全量规范(已被结构化修复部分取代,见 `docs/history/README.md`)
+- [`docs/history/pi-swarm-1.0-prd.md`](docs/history/pi-swarm-1.0-prd.md) —— 1.0 需求与测试计划(历史)
 - [`docs/architecture/pi-swarm.architecture.json`](docs/architecture/pi-swarm.architecture.json) —— 架构图的 Archify 源规格(含仓库证据锚点)
