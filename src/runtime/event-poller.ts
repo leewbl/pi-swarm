@@ -79,6 +79,7 @@ export function createEventPoller(deps: EventPollerDeps): EventPoller {
       const loaded = await cursorStore.load(identity.instanceId);
       const cursors = { ...loaded.streams };
       const matched: MatchedEvent[] = [];
+      const stagedIds = new Set<string>();
       let dirty = false;
 
       for (const stream of streams) {
@@ -101,11 +102,18 @@ export function createEventPoller(deps: EventPollerDeps): EventPoller {
           if (event.from.instanceId === identity.instanceId) continue;
           const channel = matchRoute(event);
           if (channel === null) continue;
-          if (!markSeen(event.id)) continue;
+          // Stage only: the global seen set is committed AFTER onMatch
+          // succeeds (structural liveness fix §18) — an onMatch throw must
+          // leave neither seen nor cursor committed, so the next poll
+          // redelivers the same events instead of losing them.
+          if (seen.has(event.id) || stagedIds.has(event.id)) continue;
+          stagedIds.add(event.id);
           matched.push({
             event,
             channel,
-            actionable: manifest.wakeup.events.includes(event.type),
+            // Fix §17.1: a direct event is actionable by default (latency
+            // optimization, not a liveness guarantee); broadcast needs opt-in.
+            actionable: channel === "direct" || manifest.wakeup.events.includes(event.type),
           });
         }
         if (result.events.length > 0) {
@@ -122,6 +130,8 @@ export function createEventPoller(deps: EventPollerDeps): EventPoller {
 
       if (matched.length > 0) {
         await onMatch(matched);
+        // Delivery succeeded: commit the dedupe window and the counters.
+        for (const id of stagedIds) markSeen(id);
         consumedCount += matched.length;
         logger.debug("events matched", { count: matched.length });
       }

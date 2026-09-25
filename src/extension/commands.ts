@@ -32,6 +32,9 @@ import {
 } from "./binding.js";
 import type { RuntimeHandle, RuntimeInitArgs } from "./binding.js";
 import { renderDoctorReport, runDoctor } from "./doctor.js";
+import { buildActiveTopology } from "../domain/topology.js";
+import { classifyTaskServiceability } from "../domain/serviceability.js";
+import { renderUnserviceable } from "../domain/serviceability.js";
 import { formatZodError } from "./tools.js";
 import type { SwarmStack } from "./compose.js";
 
@@ -218,6 +221,8 @@ export async function bindRole(
     config: ownStack.config,
     taskService: ownStack.services.task,
     taskStore: ownStack.stores.task,
+    manifestStore: ownStack.stores.manifest,
+    claimList: () => ownStack.stores.claim.list(),
     eventStore: ownStack.stores.event,
     cursorStore: ownStack.stores.cursor,
     presenceStore: ownStack.stores.presence,
@@ -304,10 +309,59 @@ async function runStatus(ctx: PiCtxLike, deps: SwarmCommandDeps): Promise<void> 
       `Runtime: running=${String(st.running)} pendingWake=${st.pendingWake} consumedEvents=${st.consumedEvents}`,
       `Loops: lastTaskScan=${st.lastTaskScanAt ?? "never"} lastEventPoll=${st.lastEventPollAt ?? "never"}`,
       "",
-      `Tasks: ${counts.open ?? 0} open / ${counts.claimed ?? 0} claimed / ${counts.in_progress ?? 0} in_progress`,
+      `Tasks: ${counts.open ?? 0} open / ${counts.claimed ?? 0} claimed / ${counts.in_progress ?? 0} in_progress / ${counts.blocked ?? 0} blocked`,
+      ...(await serviceabilityBlock(active.stack, now())),
       ...(await presenceTable(active.stack, now())),
     ].join("\n"),
   );
+}
+
+/** Topology + task serviceability block for `/swarm status` (fix §10/§26). */
+async function serviceabilityBlock(stack: SwarmStack, nowIsoValue: string): Promise<string[]> {
+  const [tasks, presence, manifests, claims] = await Promise.all([
+    stack.stores.task.list(),
+    stack.stores.presence.list(),
+    stack.stores.manifest.list(),
+    stack.stores.claim.list(),
+  ]);
+  const topology = buildActiveTopology(presence, manifests, {
+    nowIso: nowIsoValue,
+    presenceStaleMs: stack.config.runtime.presenceStaleMs,
+  });
+  const statusIndex = new Map(tasks.map((t) => [t.metadata.id, t.metadata.status] as const));
+  const claimed = new Set(claims.map((c) => c.taskId));
+  const lines: string[] = ["Topology:"];
+  if (topology.agents.length === 0) {
+    lines.push("  (no active agents)");
+  } else {
+    for (const agent of topology.agents) {
+      lines.push(
+        `  ${agent.role.padEnd(14)} ${agent.presence.padEnd(6)} primary: ${agent.primaryDomains.join(", ") || "(none)"}`,
+      );
+    }
+  }
+  const counts: Record<string, number> = {};
+  const unserviceable: string[] = [];
+  for (const task of tasks) {
+    const view = classifyTaskServiceability(task, topology, {
+      nowIso: nowIsoValue,
+      claimExists: claimed.has(task.metadata.id),
+      sourceClaimantInstanceIds: [],
+      statusIndex,
+    });
+    counts[view.state] = (counts[view.state] ?? 0) + 1;
+    if (view.state === "unserviceable") {
+      unserviceable.push(`  ${view.taskId} — ${view.reason}`);
+    }
+  }
+  lines.push(
+    "Tasks by serviceability:",
+    `  Ready: ${counts.ready ?? 0} / Scheduled: ${counts.scheduled ?? 0} / Blocked: ${counts.blocked ?? 0}`,
+    `  Waiting deps: ${counts.waiting_dependencies ?? 0} / In flight: ${counts.in_flight ?? 0} / Legacy: ${counts.legacy ?? 0}`,
+    `  Unserviceable: ${counts.unserviceable ?? 0}`,
+  );
+  for (const line of unserviceable) lines.push(line);
+  return lines;
 }
 
 async function resolveWorkspaceStack(

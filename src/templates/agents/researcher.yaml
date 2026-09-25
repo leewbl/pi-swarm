@@ -11,6 +11,17 @@ capabilities:
   - research
   - evidence
 
+domains:
+  primary:
+    - research
+    - analysis
+  secondary:
+    - planning
+    - decision
+
+fallback:
+  enabled: true
+
 taskPolicy:
   claim:
     roles:

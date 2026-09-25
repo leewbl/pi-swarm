@@ -19,47 +19,50 @@ function taskCandidate(taskId: string, title = "Implement OAuth", priority = 70)
   return { taskId, title, priority, path: `tasks/${taskId}.md` };
 }
 
-describe("createInbox drain kinds", () => {
+describe("createInbox peek/ack kinds", () => {
   it("returns null when nothing is queued", () => {
-    expect(createInbox().drain()).toBeNull();
+    expect(createInbox().peek()).toBeNull();
   });
 
   it("is actionable when tasks are queued", () => {
     const inbox = createInbox();
     inbox.enqueueTasks([taskCandidate("TASK-0001")]);
-    expect(inbox.drain()!.kind).toBe("actionable");
+    expect(inbox.peek()!.kind).toBe("actionable");
   });
 
   it("is actionable when an actionable event is queued", () => {
     const inbox = createInbox();
     inbox.enqueueEvents([matched({ type: "review.completed", actionable: true })]);
-    expect(inbox.drain()!.kind).toBe("actionable");
+    expect(inbox.peek()!.kind).toBe("actionable");
   });
 
   it("is warning when only warnings are queued", () => {
     const inbox = createInbox();
     inbox.enqueueWarning("cursor file unreadable");
-    expect(inbox.drain()!.kind).toBe("warning");
+    expect(inbox.peek()!.kind).toBe("warning");
   });
 
   it("is informational when only non-actionable events are queued", () => {
     const inbox = createInbox();
     inbox.enqueueEvents([matched({})]);
-    expect(inbox.drain()!.kind).toBe("informational");
+    expect(inbox.peek()!.kind).toBe("informational");
   });
 
   it("keeps warning precedence over informational events (never aside mid-turn)", () => {
     const inbox = createInbox();
     inbox.enqueueEvents([matched({})]);
     inbox.enqueueWarning("stream read failed");
-    expect(inbox.drain()!.kind).toBe("warning");
+    expect(inbox.peek()!.kind).toBe("warning");
   });
 
-  it("drain clears the queue", () => {
+  it("ack clears the queue after delivery; nack retains it for retry", () => {
     const inbox = createInbox();
     inbox.enqueueTasks([taskCandidate("TASK-0001")]);
-    expect(inbox.drain()).not.toBeNull();
-    expect(inbox.drain()).toBeNull();
+    expect(inbox.peek()).not.toBeNull();
+    inbox.nack();
+    expect(inbox.peek()).not.toBeNull(); // failed delivery keeps the batch
+    inbox.ack();
+    expect(inbox.peek()).toBeNull();
   });
 
   it("pendingCount sums queued items", () => {
@@ -68,7 +71,7 @@ describe("createInbox drain kinds", () => {
     inbox.enqueueEvents([matched({}), matched({})]);
     inbox.enqueueWarning("w");
     expect(inbox.pendingCount()).toBe(4);
-    inbox.drain();
+    inbox.ack();
     expect(inbox.pendingCount()).toBe(0);
   });
 });
@@ -78,7 +81,7 @@ describe("createInbox rendering", () => {
     const inbox = createInbox();
     inbox.enqueueTasks([taskCandidate("TASK-0001"), taskCandidate("TASK-0002")]);
     inbox.enqueueEvents([matched({}), matched({}), matched({})]);
-    const message = inbox.drain()!;
+    const message = inbox.peek()!;
     expect(message.title).toBe("SWARM INBOX — 2 tasks, 3 events");
   });
 
@@ -86,7 +89,7 @@ describe("createInbox rendering", () => {
     const inbox = createInbox();
     inbox.enqueueTasks([taskCandidate("TASK-0001")]);
     inbox.enqueueWarning("cursor file unreadable");
-    const message = inbox.drain()!;
+    const message = inbox.peek()!;
     expect(message.title).toBe("SWARM INBOX — 1 task, 1 warning");
   });
 
@@ -95,7 +98,7 @@ describe("createInbox rendering", () => {
     inbox.enqueueTasks(
       Array.from({ length: 12 }, (_, i) => taskCandidate(`TASK-${String(i + 1).padStart(4, "0")}`, `Task ${i + 1}`, 60)),
     );
-    const body = inbox.drain()!.body;
+    const body = inbox.peek()!.body;
 
     const lines = body.split("\n");
     expect(lines[0]).toBe("Actionable tasks:");
@@ -107,7 +110,7 @@ describe("createInbox rendering", () => {
   it("omits the empty-title middle segment when a candidate has no title", () => {
     const inbox = createInbox();
     inbox.enqueueTasks([taskCandidate("TASK-0007", "")]);
-    const body = inbox.drain()!.body;
+    const body = inbox.peek()!.body;
     expect(body).toContain("TASK-0007 [P70] — tasks/TASK-0007.md");
   });
 
@@ -118,7 +121,7 @@ describe("createInbox rendering", () => {
       matched({ type: "task.claimed" }),
       matched({ type: "task.claimed", direct: true }),
     ]);
-    const body = inbox.drain()!.body;
+    const body = inbox.peek()!.body;
 
     expect(body).toContain("Events:");
     expect(body).toContain("2 task.claimed (broadcast tasks)");
@@ -130,17 +133,17 @@ describe("createInbox rendering", () => {
     const inbox = createInbox();
     inbox.enqueueWarning("cursor file unreadable");
     inbox.enqueueWarning("presence write failed");
-    const body = inbox.drain()!.body;
+    const body = inbox.peek()!.body;
     expect(body).toContain("Warnings:\ncursor file unreadable\npresence write failed");
   });
 
   it("appends the task hint only when actionable tasks exist", () => {
     const withTasks = createInbox();
     withTasks.enqueueTasks([taskCandidate("TASK-0001")]);
-    expect(withTasks.drain()!.body).toContain("Open the task document before working.");
+    expect(withTasks.peek()!.body).toContain("Open the task document before working.");
 
     const eventsOnly = createInbox();
     eventsOnly.enqueueEvents([matched({ actionable: true })]);
-    expect(eventsOnly.drain()!.body).not.toContain("Open the task document");
+    expect(eventsOnly.peek()!.body).not.toContain("Open the task document");
   });
 });

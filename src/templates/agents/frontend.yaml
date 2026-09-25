@@ -12,6 +12,17 @@ capabilities:
   - ui
   - testing
 
+domains:
+  primary:
+    - frontend
+    - ui
+  secondary:
+    - testing
+    - architecture
+
+fallback:
+  enabled: true
+
 taskPolicy:
   claim:
     roles:

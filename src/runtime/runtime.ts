@@ -1,19 +1,31 @@
 /**
  * SwarmRuntime — composes the coordination loops (PRD Workstream C,
- * architecture §15).
+ * architecture §15 + structural liveness fix §21).
  *
- * Host-free: presence, event polling, task scanning, inbox consolidation and
- * wake scheduling are wired here against ports and stores only. All timing
- * goes through the injectable TimerPort so tests drive loops with
- * pollEventsOnce()/scanTasksOnce() instead of real timers.
+ * Host-free: presence, event polling, task scanning, inbox consolidation,
+ * wake scheduling, and the liveness watchdog are wired here against ports and
+ * stores only. All timing goes through the injectable TimerPort so tests
+ * drive loops with pollEventsOnce()/scanTasksOnce()/watchdogTick() instead
+ * of real timers.
  */
 import type {
   AgentIdentity,
   NormalizedAgentManifest,
   SwarmConfig,
 } from "../protocol/schemas.js";
-import type { CursorStore, EventStore, PresenceStore, TaskStore } from "../storage/types.js";
+import type {
+  ClaimRecord,
+} from "../protocol/schemas.js";
+import type {
+  CursorStore,
+  EventStore,
+  ManifestStore,
+  PresenceStore,
+  TaskStore,
+} from "../storage/types.js";
 import type { TaskService } from "../domain/types.js";
+import { buildActiveTopology } from "../domain/topology.js";
+import { evaluateLiveness } from "../domain/liveness-service.js";
 import { nowIso } from "../util/clock.js";
 import type { Logger } from "../util/logger.js";
 import { createLogger } from "../util/logger.js";
@@ -41,6 +53,10 @@ export interface SwarmRuntimeDeps {
   wake: WakePort;
   /** Optional task document source for candidate titles in wake messages. */
   taskStore?: TaskStore;
+  /** Optional manifest source for the liveness watchdog topology. */
+  manifestStore?: ManifestStore;
+  /** Optional claim source for the liveness watchdog (defaults: none). */
+  claimList?: () => Promise<ClaimRecord[]>;
   timers?: TimerPort;
   now?: () => string;
   logger?: Logger;
@@ -58,7 +74,10 @@ export class SwarmRuntime {
   private readonly taskPoller: TaskPoller;
   private readonly inbox: Inbox;
   private readonly scheduler: WakeScheduler;
+  private readonly wake: WakePort;
+  private readonly deps: SwarmRuntimeDeps;
   private running = false;
+  private lastWakeAtMs = 0;
   private handles: { event: unknown; task: unknown; heartbeat: unknown } = {
     event: null,
     task: null,
@@ -66,6 +85,7 @@ export class SwarmRuntime {
   };
 
   constructor(deps: SwarmRuntimeDeps) {
+    this.deps = deps;
     this.identity = deps.identity;
     this.manifest = deps.manifest;
     this.config = deps.config;
@@ -98,6 +118,7 @@ export class SwarmRuntime {
       logger: this.logger,
     });
     this.scheduler = createWakeScheduler({ wake: deps.wake, logger: this.logger });
+    this.wake = deps.wake;
   }
 
   async start(): Promise<void> {
@@ -115,7 +136,11 @@ export class SwarmRuntime {
       );
     }
     this.handles.heartbeat = this.timers.setInterval(
-      () => void this.guard("heartbeat", () => this.presence.beat()),
+      () =>
+        void this.guard("heartbeat", async () => {
+          await this.syncPresence();
+          await this.watchdogTick();
+        }),
       this.config.runtime.heartbeatIntervalMs,
     );
   }
@@ -168,11 +193,76 @@ export class SwarmRuntime {
     await this.presence.setIdle();
   }
 
-  /** Drain the inbox and deliver it as one batch; re-arms task surfacing. */
+  /**
+   * Presence reconciliation (fix §20): heartbeats carry the HOST's idle
+   * truth (ctx.isIdle()), never an agent_end guess. Stale presence plus a
+   * live PID stays suspect — never silently overwritten from here.
+   */
+  async syncPresence(): Promise<void> {
+    await this.presence.beat(this.wake.isIdle() ? "idle" : "busy");
+  }
+
+  /**
+   * Liveness watchdog (fix §21) — final safety net, never the scheduler.
+   * While idle: due+serviceable work with no progress past the warning
+   * threshold and no recent wake gets re-surfaced (rewake throttle) plus an
+   * inbox warning. Requires task/manifest stores and a claim source;
+   * silently skips otherwise (unit runtimes without them).
+   */
+  async watchdogTick(): Promise<void> {
+    if (!this.wake.isIdle()) return;
+    const taskStore = this.deps.taskStore;
+    const manifestStore = this.deps.manifestStore;
+    const claimList = this.deps.claimList;
+    if (!taskStore || !manifestStore || !claimList) return;
+    const now = this.now();
+    const nowMs = Date.parse(now);
+    if (this.lastWakeAtMs !== 0 && nowMs - this.lastWakeAtMs < this.config.liveness.rewakeAfterMs) {
+      return;
+    }
+    const [tasks, presence, manifests, claims] = await Promise.all([
+      taskStore.list(),
+      this.deps.presenceStore.list(),
+      manifestStore.list(),
+      claimList(),
+    ]);
+    const topology = buildActiveTopology(presence, manifests, {
+      nowIso: now,
+      presenceStaleMs: this.config.runtime.presenceStaleMs,
+    });
+    const statusIndex = new Map(tasks.map((t) => [t.metadata.id, t.metadata.status] as const));
+    const report = evaluateLiveness({
+      nowIso: now,
+      warningAfterMs: this.config.liveness.warningAfterMs,
+      tasks,
+      claims,
+      topology,
+      statusIndex,
+      forInstanceIds: [this.identity.instanceId],
+    });
+    if (report.stalled.length > 0) {
+      this.taskPoller.resurface(report.stalled.map((f) => f.taskId));
+      this.inbox.enqueueWarning(
+        `LIVENESS WARNING: ${report.stalled.length} serviceable task(s) stalled without progress: ` +
+          report.stalled.map((f) => `${f.taskId} (${f.state})`).join(", "),
+      );
+      await this.wakeFlush();
+    }
+  }
+
+  /** Peek → deliver → ack/nack; a failed delivery keeps the batch queued. */
   private async wakeFlush(): Promise<void> {
-    const message = this.inbox.drain();
+    const message = this.inbox.peek();
     if (message === null) return;
-    await this.scheduler.deliver(message, message.kind, message.kind === "actionable");
+    try {
+      await this.scheduler.deliver(message, message.kind, message.kind === "actionable");
+    } catch (err) {
+      // Structural liveness fix §19: a failed wake must not lose the batch.
+      this.inbox.nack();
+      throw err;
+    }
+    this.lastWakeAtMs = Date.parse(this.now());
+    this.inbox.ack();
     this.taskPoller.flushNotified();
   }
 

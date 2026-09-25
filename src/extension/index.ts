@@ -9,10 +9,13 @@ import { createLogger } from "../util/logger.js";
 import { locateSwarmRoot } from "../util/paths.js";
 import { nowIso } from "../util/clock.js";
 import { buildSwarmStack, createSwarmRuntime, newIdentity } from "./compose.js";
+import type { SwarmStack } from "./compose.js";
+import { normalizeAgentManifest } from "../protocol/schemas.js";
 import { bindRole, registerSwarmCommands } from "./commands.js";
 import type { SwarmCommandDeps } from "./commands.js";
 import { registerSwarmTools } from "./tools.js";
 import { renderRoleContract } from "./contract.js";
+import type { ContractTopologyAgent } from "./contract.js";
 import { createCtxRef } from "./pi-api.js";
 import type { ExtensionHook, PiCtxLike, PiLike, SessionMessage } from "./pi-api.js";
 import { clearActiveBindings, getActiveBinding, rebuildBindingFromSession } from "./binding.js";
@@ -137,6 +140,7 @@ export default function piSwarmExtension(pi: PiLike): void {
         identity: binding.identity,
         claimedTask,
         inboxSummary,
+        ...(await contractTopology(binding.stack)),
       });
       return { message: { customType: CONTRACT_CUSTOM_TYPE, content: contract, display: "info" } };
     }, onHookError),
@@ -153,7 +157,21 @@ export default function piSwarmExtension(pi: PiLike): void {
   pi.on(
     "agent_end",
     safeHook("agent_end", () => {
-      getActiveBinding()?.runtime.markIdle?.();
+      // Fix §20: agent_end is NOT an authoritative idle boundary in OMP.
+      // Presence settles from host truth instead — heartbeat syncs
+      // (ctx.isIdle()) and session_stop settles the idle candidate.
+      return undefined;
+    }, onHookError),
+  );
+
+  pi.on(
+    "session_stop",
+    safeHook("session_stop", () => {
+      // Settle/idle candidate: only when the host itself reports idle.
+      const ctx = ctxRef.get();
+      const idle = ctx?.isIdle?.();
+      if (idle === false) return undefined;
+      void Promise.resolve(getActiveBinding()?.runtime.markIdle?.()).catch(() => undefined);
       return undefined;
     }, onHookError),
   );
@@ -176,4 +194,28 @@ export default function piSwarmExtension(pi: PiLike): void {
       return undefined;
     }, onHookError),
   );
+}
+
+/** Compact active-topology view for the role contract (fix §23). */
+async function contractTopology(stack: SwarmStack): Promise<{ topology: ContractTopologyAgent[] }> {
+  const [presence, manifests] = await Promise.all([
+    stack.stores.presence.list(),
+    stack.stores.manifest.list(),
+  ]);
+  const byRole = new Map(manifests.map((m) => [m.agent.role, normalizeAgentManifest(m)]));
+  const nowMs = Date.parse(nowIso());
+  const staleMs = stack.config.runtime.presenceStaleMs;
+  const topology: ContractTopologyAgent[] = [];
+  for (const record of presence) {
+    if (record.state === "stopped") continue;
+    if (nowMs - Date.parse(record.heartbeatAt) > staleMs) continue;
+    const manifest = byRole.get(record.role);
+    if (!manifest) continue;
+    topology.push({
+      role: record.role,
+      presence: record.state === "busy" ? "busy" : "idle",
+      primaryDomains: manifest.primaryDomains,
+    });
+  }
+  return { topology };
 }

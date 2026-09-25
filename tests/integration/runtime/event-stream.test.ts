@@ -187,7 +187,7 @@ describe("event stream cursor discipline (real JSONL files)", () => {
     });
 
     const matched = await poller.poll();
-    const message = inbox.drain();
+    const message = inbox.peek();
     if (message !== null) {
       await scheduler.deliver(message, message.kind, message.kind === "actionable");
     }
@@ -222,7 +222,7 @@ describe("event stream cursor discipline (real JSONL files)", () => {
     });
 
     const matched = await poller.poll();
-    const message = inbox.drain();
+    const message = inbox.peek();
     expect(message).not.toBeNull();
     await scheduler.deliver(message!, message!.kind, message!.kind === "actionable");
 

@@ -104,7 +104,7 @@ class RecoveryServiceImpl implements RecoveryService {
     for (const task of tasks) {
       const status = task.metadata.status;
       if (
-        (status === "claimed" || status === "in_progress") &&
+        (status === "claimed" || status === "in_progress" || status === "blocked") &&
         !claimedTaskIds.has(task.metadata.id)
       ) {
         inconsistencies.push({
@@ -112,6 +112,19 @@ class RecoveryServiceImpl implements RecoveryService {
           kind: "markdown_claimed_without_claim",
           detail: `task status is ${status} but no claim record exists`,
         });
+      }
+    }
+    const statusIndexAll = new Map(tasks.map((t) => [t.metadata.id, t.metadata.status] as const));
+    for (const task of tasks) {
+      if (task.metadata.status !== "blocked") continue;
+      for (const obligation of task.metadata.blockedOn) {
+        if (!statusIndexAll.has(obligation)) {
+          inconsistencies.push({
+            taskId: task.metadata.id,
+            kind: "blocked_on_missing",
+            detail: `blocked task references missing obligation ${obligation}`,
+          });
+        }
       }
     }
 
@@ -125,9 +138,12 @@ class RecoveryServiceImpl implements RecoveryService {
   }
 
   async reconcile(): Promise<{ taskId: string; repaired: string }[]> {
-    const claimedTaskIds = new Set((await this.deps.claimStore.list()).map((c) => c.taskId));
+    const claims = await this.deps.claimStore.list();
+    const claimedTaskIds = new Set(claims.map((c) => c.taskId));
+    const tasks = await this.deps.taskStore.list();
+    const statusIndex = new Map(tasks.map((t) => [t.metadata.id, t.metadata.status] as const));
     const repairs: { taskId: string; repaired: string }[] = [];
-    for (const task of await this.deps.taskStore.list()) {
+    for (const task of tasks) {
       const status = task.metadata.status;
       const hasClaim = claimedTaskIds.has(task.metadata.id);
       // Claim canonical (§9.5): claim + open Markdown -> claimed. Claim
@@ -136,6 +152,16 @@ class RecoveryServiceImpl implements RecoveryService {
       let target: TaskStatus | null = null;
       if (hasClaim && status === "open") target = "claimed";
       else if (!hasClaim && (status === "claimed" || status === "in_progress")) target = "open";
+      else if (status === "blocked") {
+        // Structural liveness fix §26: a blocked task whose obligations are
+        // all complete can resume (claim retained -> in_progress, claim lost
+        // -> open). A blocked task without an owner always returns to open.
+        const allDone =
+          task.metadata.blockedOn.length > 0 &&
+          task.metadata.blockedOn.every((id) => statusIndex.get(id) === "done");
+        if (allDone && hasClaim) target = "in_progress";
+        else if (!hasClaim || allDone) target = "open";
+      }
       if (target === null) continue;
       await this.deps.taskStore.save({
         ...task,

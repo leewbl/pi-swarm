@@ -12,6 +12,19 @@ capabilities:
   - api-design
   - decisions
 
+domains:
+  primary:
+    - architecture
+    - design
+    - decision
+  secondary:
+    - planning
+    - backend
+    - review
+
+fallback:
+  enabled: true
+
 taskPolicy:
   claim:
     roles:

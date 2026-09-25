@@ -79,6 +79,7 @@ export function makeTask(n: number, overrides: Partial<TaskDocument["metadata"]>
       createdAt: T0,
       updatedAt: T0,
       dependsOn: [],
+      blockedOn: [],
       inputs: [],
       outputs: [],
       ...overrides,

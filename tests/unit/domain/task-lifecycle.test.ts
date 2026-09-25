@@ -70,7 +70,7 @@ async function taskInStatus(h: Harness, status: TaskStatus): Promise<{ taskId: s
     if (outcome.status !== "claimed") throw new Error(`drive claim failed: ${outcome.message}`);
     claimId = outcome.claim.claimId;
   }
-  if (["in_progress", "done", "failed"].includes(status)) {
+  if (["in_progress", "done", "failed", "blocked"].includes(status)) {
     const started = await h.service.start(taskId, claimId, h.backend);
     if (!started.ok) throw new Error("drive start failed");
   }
@@ -81,6 +81,10 @@ async function taskInStatus(h: Harness, status: TaskStatus): Promise<{ taskId: s
   if (status === "failed") {
     const failed = await h.service.fail(taskId, claimId, h.backend, { reason: "driving" });
     if (!failed.ok) throw new Error("drive fail failed");
+  }
+  if (status === "blocked") {
+    const blocked = await h.service.block(taskId, claimId, h.backend, { reason: "driving" });
+    if (!blocked.ok) throw new Error("drive block failed");
   }
   if (status === "abandoned") {
     const abandoned = await h.service.abandon(taskId, claimId, h.backend);
@@ -115,6 +119,15 @@ const ATTEMPTS: Record<Exclude<TaskStatus, "open">, Attempt> = {
     const r = await h.service.abandon(taskId, claimId, h.backend);
     return { ok: r.ok, code: r.ok ? undefined : r.code };
   },
+  blocked: async (h, taskId, claimId) => {
+    const r = await h.service.block(taskId, claimId, h.backend, { reason: "attempt" });
+    return { ok: r.ok, code: r.ok ? undefined : r.code };
+  },
+};
+
+const UNBLOCK: Attempt = async (h, taskId, claimId) => {
+  const r = await h.service.unblock(taskId, claimId, h.backend);
+  return { ok: r.ok, code: r.ok ? undefined : r.code };
 };
 
 const REOPEN: Attempt = async (h, taskId) => {
@@ -133,7 +146,8 @@ describe("task lifecycle state machine", () => {
       for (const to of TASK_TRANSITIONS[from]) {
         const h = setup();
         const { taskId, claimId } = await taskInStatus(h, from);
-        const attempt = to === "open" ? REOPEN : ATTEMPTS[to];
+        const attempt =
+          to === "open" ? REOPEN : to === "in_progress" && from === "blocked" ? UNBLOCK : ATTEMPTS[to];
         const result = await attempt(h, taskId, claimId);
         expect(
           result.ok,
@@ -157,6 +171,7 @@ describe("task lifecycle state machine", () => {
       { from: "done", to: "open" },
       { from: "failed", to: "in_progress" },
       { from: "failed", to: "open" },
+      { from: "claimed", to: "blocked" },
     ];
     for (const { from, to } of invalid) {
       const h = setup();

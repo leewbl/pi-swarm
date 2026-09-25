@@ -119,6 +119,9 @@ export function makeManifest(role: string): NormalizedAgentManifest {
     capabilities: [role, "testing"],
     claimRoles: [role],
     capabilityMode: "all",
+    primaryDomains: [role],
+    secondaryDomains: [],
+    fallbackEnabled: true,
     subscriptions: { direct: true, topics: ["tasks", "architecture", "decisions"] },
     blackboard: {
       read: ["project.md", "findings/**"],
@@ -299,6 +302,8 @@ export function makeFakeStack(options: FakeStackOptions = {}): SwarmStack {
         complete: vi.fn(async () => ({ ok: false as const, code: "invalid_input" as const, message: "not stubbed" })),
         fail: vi.fn(async () => ({ ok: false as const, code: "invalid_input" as const, message: "not stubbed" })),
         abandon: vi.fn(async () => ({ ok: false as const, code: "invalid_input" as const, message: "not stubbed" })),
+        block: vi.fn(async () => ({ ok: false as const, code: "invalid_input" as const, message: "not stubbed" })),
+        unblock: vi.fn(async () => ({ ok: false as const, code: "invalid_input" as const, message: "not stubbed" })),
         reopen: vi.fn(async () => ({ ok: false as const, code: "invalid_input" as const, message: "not stubbed" })),
       },
       recovery: {
@@ -306,6 +311,10 @@ export function makeFakeStack(options: FakeStackOptions = {}): SwarmStack {
         reconcile: vi.fn(async () => []),
         recoverOrphans: vi.fn(async () => []),
         recoverTask: vi.fn(async () => ({ ok: false, message: "not stubbed" })),
+      },
+      obligations: {
+        createObligation: vi.fn(async () => ({ ok: false as const, code: "invalid_input" as const, message: "not stubbed" })),
+        createRework: vi.fn(async () => ({ ok: false as const, code: "invalid_input" as const, message: "not stubbed" })),
       },
     },
   };

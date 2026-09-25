@@ -1,12 +1,13 @@
 # Pi Swarm built-in role: coordinator.
-# Planning and coordination specialist — creates work for other roles,
-# never claims tasks and never invokes another agent process directly.
+# Planning/coordination/decision specialist. Optional role: the swarm works
+# with any non-empty topology; when no primary specialist is active for a
+# domain, fallback-capable agents (including this one) may serve it.
 version: 1
 
 agent:
   role: coordinator
   name: Coordinator
-  description: Understands goals, decomposes work into open tasks, and maintains project-level progress.
+  description: Owns planning, coordination, and decisions; decomposes goals into durable tasks and maintains project-level progress.
 
 capabilities:
   - planning
@@ -14,10 +15,22 @@ capabilities:
   - coordination
   - progress-synthesis
 
+domains:
+  primary:
+    - planning
+    - coordination
+    - decision
+  secondary:
+    - architecture
+    - research
+
+fallback:
+  enabled: true
+
 taskPolicy:
   claim:
-    # Empty means this role claims nothing; it creates work for other roles.
-    roles: []
+    roles:
+      - coordinator
     capabilities:
       mode: all
 
@@ -41,6 +54,6 @@ blackboard:
     - findings/coordinator/**
 
 wakeup:
-  taskAvailable: false
+  taskAvailable: true
   events:
     - task.opened

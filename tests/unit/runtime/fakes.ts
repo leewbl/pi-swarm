@@ -90,6 +90,9 @@ export interface ManifestOverrides {
   capabilities?: string[];
   claimRoles?: string[];
   capabilityMode?: "all" | "any";
+  primaryDomains?: string[];
+  secondaryDomains?: string[];
+  fallbackEnabled?: boolean;
   subscriptions?: { direct: boolean; topics: string[] };
   wakeup?: { taskAvailable: boolean; events: string[] };
 }
@@ -101,6 +104,9 @@ export function makeManifest(overrides: ManifestOverrides = {}): NormalizedAgent
     capabilities: overrides.capabilities ?? ["backend", "api"],
     claimRoles: overrides.claimRoles ?? ["backend"],
     capabilityMode: overrides.capabilityMode ?? "all",
+    primaryDomains: overrides.primaryDomains ?? ["backend"],
+    secondaryDomains: overrides.secondaryDomains ?? [],
+    fallbackEnabled: overrides.fallbackEnabled ?? true,
     subscriptions: overrides.subscriptions ?? { direct: true, topics: ["tasks", "review"] },
     blackboard: { read: [], write: [] },
     wakeup: overrides.wakeup ?? { taskAvailable: true, events: ["review.completed"] },
@@ -319,6 +325,7 @@ export class FakeTaskService implements TaskService {
         createdAt: at,
         updatedAt: at,
         dependsOn: input.dependsOn ?? [],
+        blockedOn: [],
         inputs: [],
         outputs: [],
       },
@@ -464,6 +471,30 @@ export class FakeTaskService implements TaskService {
     return this.transition(taskId, claimId, "failed");
   }
 
+  async block(
+    taskId: string,
+    claimId: string,
+    _by: unknown,
+    result: { reason: string; blockedOn?: string[] },
+  ): Promise<LifecycleResult> {
+    const outcome = this.transition(taskId, claimId, "blocked");
+    if (!outcome.ok) return outcome;
+    const entry = this.entries.get(taskId)!;
+    entry.doc = {
+      ...entry.doc,
+      metadata: {
+        ...entry.doc.metadata,
+        blockedOn: [...new Set([...entry.doc.metadata.blockedOn, ...(result.blockedOn ?? [])])],
+      },
+    };
+    if (this.taskStore) await this.taskStore.save(entry.doc);
+    return { ok: true, task: entry.doc };
+  }
+
+  async unblock(taskId: string, claimId: string): Promise<LifecycleResult> {
+    return this.transition(taskId, claimId, "in_progress");
+  }
+
   async abandon(taskId: string, claimId: string): Promise<LifecycleResult> {
     return this.transition(taskId, claimId, "abandoned");
   }
@@ -518,7 +549,8 @@ export class FakeTaskService implements TaskService {
     const allowed: Record<TaskStatus, TaskStatus[]> = {
       open: [],
       claimed: ["in_progress", "abandoned"],
-      in_progress: ["done", "failed", "abandoned"],
+      in_progress: ["blocked", "done", "failed", "abandoned"],
+      blocked: ["in_progress", "abandoned"],
       done: [],
       failed: [],
       abandoned: ["open"],

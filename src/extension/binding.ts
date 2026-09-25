@@ -8,12 +8,14 @@
  */
 import type {
   AgentIdentity,
+  ClaimRecord,
   NormalizedAgentManifest,
   SwarmConfig,
 } from "../protocol/schemas.js";
 import type {
   CursorStore,
   EventStore,
+  ManifestStore,
   PresenceStore,
   TaskStore,
 } from "../storage/types.js";
@@ -43,6 +45,10 @@ export interface RuntimeInitArgs {
   taskService: TaskService;
   /** Optional: lets the runtime render task titles in wake messages. */
   taskStore?: TaskStore;
+  /** Optional: manifest source for the liveness watchdog topology. */
+  manifestStore?: ManifestStore;
+  /** Optional: claim source for the liveness watchdog. */
+  claimList?: () => Promise<ClaimRecord[]>;
   eventStore: EventStore;
   cursorStore: CursorStore;
   presenceStore: PresenceStore;

@@ -16,6 +16,7 @@ import {
 } from "../../../src/protocol/schemas.js";
 import type {
   AgentIdentity,
+  AgentManifest,
   ClaimRecord,
   NormalizedAgentManifest,
   PresenceRecord,
@@ -25,7 +26,7 @@ import type {
   TaskStatus,
 } from "../../../src/protocol/schemas.js";
 import { TaskExistsError } from "../../../src/storage/types.js";
-import type { ClaimStore, PresenceStore, TaskStore } from "../../../src/storage/types.js";
+import type { ClaimStore, ManifestIssue, ManifestStore, PresenceStore, TaskStore } from "../../../src/storage/types.js";
 import type { EmitEventInput, EventService } from "../../../src/domain/types.js";
 import { tryCreateExclusive, readFileIfExists } from "../../../src/util/atomic-file.js";
 
@@ -50,6 +51,9 @@ export function makeManifest(opts: {
   capabilities?: string[];
   claimRoles?: string[];
   capabilityMode?: "all" | "any";
+  primaryDomains?: string[];
+  secondaryDomains?: string[];
+  fallbackEnabled?: boolean;
 }): NormalizedAgentManifest {
   return {
     role: opts.role,
@@ -57,6 +61,9 @@ export function makeManifest(opts: {
     capabilities: opts.capabilities ?? [],
     claimRoles: opts.claimRoles ?? [opts.role],
     capabilityMode: opts.capabilityMode ?? "all",
+    primaryDomains: opts.primaryDomains ?? [opts.role],
+    secondaryDomains: opts.secondaryDomains ?? [],
+    fallbackEnabled: opts.fallbackEnabled ?? true,
     subscriptions: { direct: true, topics: [] },
     blackboard: { read: [], write: [] },
     wakeup: { taskAvailable: true, events: [] },
@@ -270,5 +277,31 @@ export class FsClaimStore implements ClaimStore {
       if (raw !== null) out.push(ClaimRecordSchema.parse(parseYaml(raw)));
     }
     return out;
+  }
+}
+
+export class MemoryManifestStore implements ManifestStore {
+  readonly docs: AgentManifest[] = [];
+
+  constructor(...docs: AgentManifest[]) {
+    this.docs.push(...docs);
+  }
+
+  async list(): Promise<AgentManifest[]> {
+    return [...this.docs];
+  }
+
+  async get(role: string): Promise<AgentManifest | null> {
+    return this.docs.find((m) => m.agent.role === role) ?? null;
+  }
+
+  async save(manifest: AgentManifest): Promise<void> {
+    const idx = this.docs.findIndex((m) => m.agent.role === manifest.agent.role);
+    if (idx >= 0) this.docs[idx] = manifest;
+    else this.docs.push(manifest);
+  }
+
+  async validate(): Promise<ManifestIssue[]> {
+    return [];
   }
 }

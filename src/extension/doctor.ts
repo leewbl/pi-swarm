@@ -14,6 +14,9 @@ import { nowIso } from "../util/clock.js";
 import { ulid } from "../util/ulid.js";
 import { CursorStateSchema, normalizeAgentManifest } from "../protocol/schemas.js";
 import type { PresenceRecord } from "../protocol/schemas.js";
+import { buildActiveTopology } from "../domain/topology.js";
+import { classifyTaskServiceability } from "../domain/serviceability.js";
+import { evaluateLiveness } from "../domain/liveness-service.js";
 import { defaultIsProcessAlive } from "./binding.js";
 import type { SwarmStack } from "./compose.js";
 
@@ -214,6 +217,108 @@ async function checkAtomicCreate(stack: SwarmStack, add: AddFinding): Promise<vo
   }
 }
 
+async function checkObligations(stack: SwarmStack, add: AddFinding): Promise<void> {
+  const tasks = await stack.stores.task.list();
+  const statusIndex = new Map(tasks.map((t) => [t.metadata.id, t.metadata.status] as const));
+  for (const task of tasks) {
+    const meta = task.metadata;
+    if (meta.status !== "blocked") continue;
+    for (const obligation of meta.blockedOn) {
+      if (!statusIndex.has(obligation)) {
+        add(
+          "error",
+          "obligations",
+          `blocked task ${meta.id} references missing obligation ${obligation}`,
+          "remove the stale blockedOn entry or recreate the referenced work",
+        );
+      }
+    }
+    const allDone =
+      meta.blockedOn.length > 0 && meta.blockedOn.every((id) => statusIndex.get(id) === "done");
+    if (allDone) {
+      add(
+        "warning",
+        "obligations",
+        `blocked task ${meta.id} has all obligations done but has not resumed`,
+        "run /swarm recover to reconcile and resume it",
+      );
+    }
+  }
+  for (const task of tasks) {
+    const meta = task.metadata;
+    if (meta.workDomain === undefined && meta.eligibleRoles !== undefined) {
+      add(
+        "info",
+        "obligations",
+        `task ${meta.id} uses legacy eligibleRoles without workDomain`,
+        "legacy tasks keep the role-gate path; new tasks should use workDomain + constraints",
+      );
+    }
+  }
+}
+
+async function checkServiceability(
+  stack: SwarmStack,
+  add: AddFinding,
+  nowIsoValue: string,
+): Promise<void> {
+  const [tasks, presence, manifests, claims] = await Promise.all([
+    stack.stores.task.list(),
+    stack.stores.presence.list(),
+    stack.stores.manifest.list(),
+    stack.stores.claim.list(),
+  ]);
+  for (const manifest of manifests) {
+    const normalized = normalizeAgentManifest(manifest);
+    if (normalized.primaryDomains.length === 0) {
+      add(
+        "warning",
+        "domains",
+        `role ${normalized.role} declares no primary domains`,
+        "set domains.primary in agents/<role>.yaml or remove the explicit empty list",
+      );
+    }
+  }
+  const topology = buildActiveTopology(presence, manifests, {
+    nowIso: nowIsoValue,
+    presenceStaleMs: stack.config.runtime.presenceStaleMs,
+  });
+  const statusIndex = new Map(tasks.map((t) => [t.metadata.id, t.metadata.status] as const));
+  const claimed = new Set(claims.map((c) => c.taskId));
+  for (const task of tasks) {
+    const view = classifyTaskServiceability(task, topology, {
+      nowIso: nowIsoValue,
+      claimExists: claimed.has(task.metadata.id),
+      sourceClaimantInstanceIds: [],
+      statusIndex,
+    });
+    if (view.state === "unserviceable") {
+      add(
+        "warning",
+        "serviceability",
+        `task ${view.taskId} is unserviceable: ${view.reason}`,
+        "start an agent with the missing capability, widen fallback, or redefine the task",
+      );
+    }
+  }
+  const report = evaluateLiveness({
+    nowIso: nowIsoValue,
+    warningAfterMs: stack.config.liveness.warningAfterMs,
+    tasks,
+    claims,
+    topology,
+    statusIndex,
+  });
+  for (const finding of report.stalled) {
+    add(
+      "warning",
+      "liveness",
+      `task ${finding.taskId} is due and serviceable but stalled: ${finding.reason}`,
+      "eligible agents are not claiming; check their sessions or run /swarm recover",
+    );
+  }
+}
+
 export async function runDoctor(stack: SwarmStack, opts: DoctorOptions = {}): Promise<DoctorReport> {
   const now = opts.now ?? nowIso;
   const isProcessAlive = opts.isProcessAlive ?? defaultIsProcessAlive;
@@ -227,6 +332,8 @@ export async function runDoctor(stack: SwarmStack, opts: DoctorOptions = {}): Pr
     ["presence", () => checkPresenceDuplicates(stack, add, now(), isProcessAlive)],
     ["tasks", () => checkTasks(stack, add)],
     ["consistency", () => checkConsistency(stack, add)],
+    ["obligations", () => checkObligations(stack, add)],
+    ["serviceability", () => checkServiceability(stack, add, now())],
     ["events", () => checkStreams(stack, add)],
     ["cursors", () => checkCursors(stack, add)],
     ["blackboard", () => checkBlackboardConfig(stack, add)],

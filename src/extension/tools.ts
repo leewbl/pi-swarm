@@ -14,6 +14,7 @@ import {
 import type { AgentIdentity, NormalizedAgentManifest, Route } from "../protocol/schemas.js";
 import { CANONICAL_EVENT_TYPES } from "../protocol/events.js";
 import type { LifecycleResult } from "../domain/types.js";
+import { renderTopologyView, resolveTaskCandidatesForStatus } from "./topology-view.js";
 import type { PiLike, ToolResult } from "./pi-api.js";
 import type { SwarmStack } from "./compose.js";
 
@@ -130,6 +131,30 @@ const taskAbandonParams = z.object({
   claimId: z.string().min(1),
   reason: z.string().optional(),
 });
+
+const taskBlockParams = z.object({
+  taskId: z.string().regex(TASK_ID_RE),
+  claimId: z.string().min(1),
+  reason: z.string().min(1),
+  blockedOn: z.array(z.string().regex(TASK_ID_RE)).optional(),
+});
+const taskUnblockParams = z.object({
+  taskId: z.string().regex(TASK_ID_RE),
+  claimId: z.string().min(1),
+});
+const requestCreateParams = z.object({
+  kind: z.string().min(1),
+  workDomain: z.string().min(1),
+  title: z.string().min(1),
+  reason: z.string().optional(),
+  sourceTaskId: z.string().regex(TASK_ID_RE).optional(),
+  options: z.array(z.string().min(1)).optional(),
+  fallbackAllowed: z.boolean().optional(),
+  excludeSourceClaimant: z.boolean().optional(),
+  priority: z.number().int().min(0).max(100).optional(),
+  inputs: z.array(z.string().min(1)).optional(),
+});
+const taskCandidatesParams = z.object({ taskId: z.string().regex(TASK_ID_RE) });
 const taskReopenParams = z.object({ taskId: z.string().regex(TASK_ID_RE) });
 
 const eventEmitParams = z.object({
@@ -388,6 +413,122 @@ export function registerSwarmTools(pi: PiLike, getSession: GetToolSession): void
           parsed.value.taskId,
           await session.stack.services.task.reopen(parsed.value.taskId, session.identity),
         );
+      }),
+  });
+
+  pi.registerTool({
+    name: "swarm_task_block",
+    label: "Swarm task block",
+    description:
+      "Block your in_progress task on durable obligations (task.blocked). The claim is retained; when every blockedOn task completes, the runtime resumes this task automatically. ALWAYS create the obligation first (swarm_request_create), then block on it.",
+    parameters: taskBlockParams,
+    execute: (_id, params) =>
+      guarded(getSession, async (session) => {
+        const parsed = parseParams(taskBlockParams, params);
+        if (!parsed.ok) return failure(parsed.message);
+        return lifecycleResult(
+          parsed.value.taskId,
+          await session.stack.services.task.block(
+            parsed.value.taskId,
+            parsed.value.claimId,
+            session.identity,
+            {
+              reason: parsed.value.reason,
+              ...(parsed.value.blockedOn !== undefined
+                ? { blockedOn: parsed.value.blockedOn }
+                : {}),
+            },
+          ),
+        );
+      }),
+  });
+
+  pi.registerTool({
+    name: "swarm_task_unblock",
+    label: "Swarm task unblock",
+    description:
+      "Resume your blocked task to in_progress. Requires every blockedOn obligation to be done; the runtime also does this automatically when obligations complete.",
+    parameters: taskUnblockParams,
+    execute: (_id, params) =>
+      guarded(getSession, async (session) => {
+        const parsed = parseParams(taskUnblockParams, params);
+        if (!parsed.ok) return failure(parsed.message);
+        return lifecycleResult(
+          parsed.value.taskId,
+          await session.stack.services.task.unblock(
+            parsed.value.taskId,
+            parsed.value.claimId,
+            session.identity,
+          ),
+        );
+      }),
+  });
+
+  pi.registerTool({
+    name: "swarm_request_create",
+    label: "Swarm request create",
+    description:
+      "Create a durable coordination obligation (decision/review/verification/approval/...) as a normal task with origin metadata. NEVER express a required future action as an event only — use this tool. Idempotent per sourceTaskId+kind+title. Optionally block the source task on the result afterwards with swarm_task_block.",
+    parameters: requestCreateParams,
+    execute: (_id, params) =>
+      guarded(getSession, async (session) => {
+        const parsed = parseParams(requestCreateParams, params);
+        if (!parsed.ok) return failure(parsed.message);
+        const v = parsed.value;
+        const result = await session.stack.services.obligations.createObligation(
+          {
+            kind: v.kind,
+            workDomain: v.workDomain,
+            title: v.title,
+            ...(v.reason !== undefined ? { reason: v.reason } : {}),
+            ...(v.sourceTaskId !== undefined ? { sourceTaskId: v.sourceTaskId } : {}),
+            ...(v.options !== undefined ? { options: v.options } : {}),
+            ...(v.fallbackAllowed !== undefined ? { fallbackAllowed: v.fallbackAllowed } : {}),
+            ...(v.excludeSourceClaimant !== undefined
+              ? { excludeSourceClaimant: v.excludeSourceClaimant }
+              : {}),
+            ...(v.priority !== undefined ? { priority: v.priority } : {}),
+            ...(v.inputs !== undefined ? { inputs: v.inputs } : {}),
+          },
+          session.identity,
+        );
+        if (!result.ok) return failure(result.message);
+        const relPath = session.stack.paths.relativeToSwarmRoot(
+          session.stack.paths.taskFile(result.task.metadata.id),
+        );
+        return text(
+          `${result.deduplicated ? "Existing obligation" : "Created obligation"} ${result.task.metadata.id} — ${v.title}\nPath: ${relPath}\nNext: eligible agents claim it; block the source task on it with swarm_task_block if the source must wait.`,
+          { taskId: result.task.metadata.id, path: relPath, deduplicated: result.deduplicated },
+        );
+      }),
+  });
+
+  pi.registerTool({
+    name: "swarm_task_candidates",
+    label: "Swarm task candidates",
+    description:
+      "Resolve which agents may currently compete for a task (Boundary Gate: hard constraints, then primary/secondary/fallback tiers, else unserviceable). Read-only transparency view; the atomic claim re-validates everything.",
+    parameters: taskCandidatesParams,
+    execute: (_id, params) =>
+      guarded(getSession, async (session) => {
+        const parsed = parseParams(taskCandidatesParams, params);
+        if (!parsed.ok) return failure(parsed.message);
+        const view = await resolveTaskCandidatesForStatus(session.stack, parsed.value.taskId);
+        if (!view.ok) return failure(view.message);
+        return text(view.text, view.details);
+      }),
+  });
+
+  pi.registerTool({
+    name: "swarm_topology",
+    label: "Swarm topology",
+    description:
+      "Show the active swarm topology: live agents, their primary/secondary domain coverage, and capabilities. This is what task candidate resolution sees right now.",
+    parameters: z.object({}),
+    execute: (_id, _params) =>
+      guarded(getSession, async (session) => {
+        const view = await renderTopologyView(session.stack);
+        return text(view.text, view.details);
       }),
   });
 

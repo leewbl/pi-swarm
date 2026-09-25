@@ -48,8 +48,22 @@ export interface CreateTaskInput {
   priority?: number;
   eligibleRoles?: string[];
   requiredCapabilities?: string[];
+  /** Primary organizational ownership domain (topology resolution). */
+  workDomain?: string;
+  /** Soft ranking hints inside an eligible tier. */
+  preferredCapabilities?: string[];
+  /** True feasibility constraints that fallback cannot bypass. */
+  hardRequirements?: { capabilities?: string[] };
+  /** Policy constraints such as self-review exclusion. */
+  constraints?: { excludeTaskAuthor?: boolean; excludeCurrentClaimant?: boolean };
+  /** Whether the task may leave primary/secondary boundaries. */
+  fallback?: { allowed?: boolean };
+  /** One-shot durable scheduling gate (ISO-8601 UTC). */
+  availableAt?: string;
   dependsOn?: string[];
   parentTask?: string;
+  /** Origin/idempotency metadata for coordination obligations. */
+  origin?: { type: string; sourceTaskId?: string; requestKey?: string };
   /** Blackboard/artifact references a claimant should read first. */
   inputs?: string[];
 }
@@ -73,7 +87,15 @@ export type LifecycleResult =
       message: string;
     };
 
-export type IneligibleReason = "status" | "claimed" | "role" | "capabilities" | "dependencies";
+export type IneligibleReason =
+  | "status"
+  | "claimed"
+  | "role"
+  | "capabilities"
+  | "dependencies"
+  | "not_due"
+  | "blocked_on"
+  | "unserviceable";
 
 export interface TaskView {
   metadata: TaskMetadata;
@@ -81,6 +103,8 @@ export interface TaskView {
   /** Eligibility for `forAgent` when provided in the query. */
   eligible: boolean;
   ineligibleReason?: IneligibleReason;
+  /** Resolution tier when eligible via the topology resolver (fix §22). */
+  tier?: "primary" | "secondary" | "fallback";
 }
 
 export interface TaskListQuery {
@@ -131,6 +155,18 @@ export interface TaskService {
     by: AgentIdentity,
     result?: { reason?: string },
   ): Promise<LifecycleResult>;
+  /** in_progress -> blocked on durable obligations; claim is retained (fix §13.4). */
+  block(
+    taskId: string,
+    claimId: string,
+    by: AgentIdentity,
+    result: { reason: string; blockedOn?: string[] },
+  ): Promise<LifecycleResult>;
+  /**
+   * blocked -> in_progress once obligations resolve (manual/recovery path;
+   * complete() drives the automatic path when blockedOn finishes).
+   */
+  unblock(taskId: string, claimId: string, by: AgentIdentity): Promise<LifecycleResult>;
   /** abandoned -> open. Emits `task.reopened`. */
   reopen(taskId: string, by: AgentIdentity): Promise<LifecycleResult>;
 }
@@ -145,17 +181,18 @@ export interface EligibilityDecision {
   /** Human-readable explanation for tool results / status output. */
   detail?: string;
 }
-
 export interface PolicyService {
   /**
    * Pure eligibility check for one manifest against one task.
    * `statusIndex` maps taskId -> status for dependency resolution.
+   * `opts.now` (ISO) gates availableAt; the legacy path shares the gate.
    */
   checkClaim(
     manifest: NormalizedAgentManifest,
     task: TaskDocument,
     hasClaim: boolean,
     statusIndex: ReadonlyMap<string, TaskStatus>,
+    opts?: { now?: string },
   ): EligibilityDecision;
 }
 
@@ -174,7 +211,11 @@ export interface ClaimantState {
 
 export interface Inconsistency {
   taskId: string;
-  kind: "claim_without_markdown_status" | "markdown_claimed_without_claim" | "task_file_missing";
+  kind:
+    | "claim_without_markdown_status"
+    | "markdown_claimed_without_claim"
+    | "task_file_missing"
+    | "blocked_on_missing";
   detail: string;
 }
 

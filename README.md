@@ -47,7 +47,7 @@ omp -e /path/to/pi-swarm
    /swarm role coordinator
    ```
 
-   协调者向你确认目标,并为其他角色创建 open 任务(`swarm_task_create`)。它自己从不认领任务,也从不直接唤起其他代理进程。
+   协调者向你确认目标,并为其他角色创建 open 任务(`swarm_task_create`)。协调者是可选角色:它专注 planning/coordination/decision 领域,也能在专家缺席时通过回退顶上;任何非空拓扑(哪怕只有一个代理)都能推进工作。
 
 3. **在同一工作区的其他 Pi 窗口绑定更多角色**:
 
@@ -79,23 +79,28 @@ omp -e /path/to/pi-swarm
 | `/swarm recover [taskId]` | 扫描并对账 claim/task 漂移,回收孤儿任务 |
 | `/swarm doctor` | 只读诊断(目录布局、清单、JSONL、游标、文件系统能力) |
 
-## 领域工具(13 个)
+## 领域工具(18 个)
 
 | 任务生命周期 | 说明 |
 | --- | --- |
 | `swarm_task_list` | 列出任务(默认列出可认领与自己持有的) |
 | `swarm_task_get` | 读取单个任务的元数据、依赖与正文 |
 | `swarm_task_create` | 在共享池创建 open 任务(不授予所有权) |
-| `swarm_task_claim` | 原子认领;竞争时返回 `already_claimed` |
+| `swarm_task_claim` | 原子认领;认领时按当前拓扑重新校验资格;竞争时返回 `already_claimed` |
 | `swarm_task_start` | 认领任务转入 in_progress(需 `claimId`) |
-| `swarm_task_complete` | 完成任务(done),可带摘要与产出引用 |
+| `swarm_task_complete` | 完成任务(done),可带摘要与产出引用;自动恢复被它解除阻塞的父任务 |
 | `swarm_task_fail` | 以结构化原因标记失败 |
 | `swarm_task_abandon` | 放弃持有任务,交由恢复流程 |
+| `swarm_task_block` | 将 in_progress 任务阻塞在持久义务上(保留认领) |
+| `swarm_task_unblock` | 义务全部完成后恢复 blocked 任务 |
 | `swarm_task_reopen` | 将 abandoned 任务重新打开 |
+| `swarm_request_create` | 创建持久协调义务(决策/评审/审批…)= 普通任务 + origin 元数据,幂等 |
 
-| 事件 · 黑板 · 工件 | 说明 |
+| 拓扑 · 事件 · 黑板 · 工件 | 说明 |
 | --- | --- |
-| `swarm_event_emit` | 向自己的 JSONL 流发事件(`toRole` 定向或 `topic` 广播) |
+| `swarm_topology` | 查看当前活跃拓扑与领域覆盖(解析器眼中的世界) |
+| `swarm_task_candidates` | 解析某任务当前的 Boundary Gate 结果(primary/secondary/fallback/不可服务) |
+| `swarm_event_emit` | 向自己的 JSONL 流发事件(`toRole` 定向或 `topic` 广播);事件是通知,不是义务 |
 | `swarm_blackboard_read` / `swarm_blackboard_write` | 按清单 glob 策略读/写黑板文档 |
 | `swarm_artifact_publish` | 大块产出发布到 `artifacts/<taskId>/` 并发引用事件 |
 
@@ -105,18 +110,34 @@ omp -e /path/to/pi-swarm
 
 ```text
 open ──原子认领──▶ claimed ──显式 start──▶ in_progress ──▶ done | failed
- ▲                                              │
- └────── recovery / reopen ◀── abandoned ◀──────┘
+                      │                        │  ▲
+                      │                        ▼  │ 义务完成自动恢复
+                      │                      blocked ──▶ abandoned ──▶ open
 ```
+
+**拓扑感知调度(Boundary Gate)** —— 任务带 `workDomain` 时,认领资格按当前活跃拓扑解析:
+
+```text
+硬约束(能力/排除作者或认领者) → Primary 专家在线? → 只允许 Primary
+                                └▶ 无 Primary,Secondary 在线? → 只允许 Secondary
+                                   └▶ 都无且允许 fallback → 回退池
+                                      └▶ 否则 → UNSERVICEABLE(显式暴露,绝不静默)
+```
+
+- 单代理集群也能工作(回退覆盖空缺领域);专家齐全时边界严格(在线 Primary 存在时其他角色不得越界,是硬性拒绝而非评分偏好)。
+- 角色是可选模板:coordinator 不是必需节点,也不被禁止认领任务;缺谁都不死锁。
+- 期望他人未来行动的请求必须落为持久任务(`swarm_request_create`),事件只做加速;验证推翻完成结论时创建 rework 任务,不改写 done 历史。
+- `availableAt` 提供持久调度门:checkpoint 任务到期前不可行动,重启后依然生效,无需内存定时器。
 
 **关键不变量**
 
 1. 认领记录(`claims/`)是任务所有权的唯一事实;任务 Markdown 只是物化视图,对账器负责修复漂移。
-2. 事件永远不授予所有权;漏掉事件不会让任务不可发现 —— 代理总会重扫任务池。
-3. 每条事件流恰好一个写者;消费者各自持有游标,不完整的 JSONL 尾行不会被当作有效事件。
-4. 任务变更要求持有当前 `claimId`;黑板的读写由扩展工具按清单强制执行,而非仅靠提示词。
-5. 自动孤儿回收要求「心跳过期 且 进程确认死亡」双条件;活着但可疑的认领者只暴露、不自动回收。
-6. 扩展重启后能从 `.pi/swarm/` 完整重建可行动的运行时状态。
+2. 事件永远不授予所有权;漏掉事件不会让工作不可发现 —— 代理总会重扫任务池。
+3. 只有持久任务代表义务;blocked 任务阻塞在 `blockedOn` 子任务上,子任务完成时自动恢复。
+4. 每条事件流恰好一个写者;消费者各自持有游标,不完整的 JSONL 尾行不会被当作有效事件。
+5. 任务变更要求持有当前 `claimId`;黑板的读写由扩展工具按清单强制执行,而非仅靠提示词。
+6. 自动孤儿回收要求「心跳过期 且 进程确认死亡」双条件;活着但可疑的认领者只暴露、不自动回收。
+7. 扩展重启后能从 `.pi/swarm/` 完整重建可行动的运行时状态。
 
 **运行时双循环** —— 每个会话内嵌一个扩展实例:任务池循环扫描/过滤可认领任务;事件循环按游标消费各生产者流;两者汇入收件箱,由唤醒调度器批量投递 —— 仅在会话空闲时 `sendMessage` 触发回合,避免打扰进行中的工作。
 

@@ -21,6 +21,8 @@ import { createPolicyService } from "../domain/policy-service.js";
 import { createTaskService } from "../domain/task-service.js";
 import { createRecoveryService } from "../domain/recovery-service.js";
 import { createEventService } from "../domain/event-service.js";
+import { createObligationService } from "../domain/obligation-service.js";
+import type { ObligationService } from "../domain/obligation-service.js";
 import { createSwarmRuntime } from "../runtime/runtime.js";
 import { newIdentity } from "../runtime/identity.js";
 import type {
@@ -53,6 +55,7 @@ export interface SwarmStackServices {
   events: EventService;
   task: TaskService;
   recovery: RecoveryService;
+  obligations: ObligationService;
 }
 
 export interface SwarmStack {
@@ -87,16 +90,20 @@ export async function buildSwarmStack(
   const config = await stores.config.load();
   const policy = createPolicyService();
   const events = createEventService({ eventStore: stores.event });
+  const task = createTaskService({
+    taskStore: stores.task,
+    claimStore: stores.claim,
+    policy,
+    eventService: events,
+    presenceStore: stores.presence,
+    manifestStore: stores.manifest,
+    config,
+    now: nowIso,
+  });
   const services: SwarmStackServices = {
     policy,
     events,
-    task: createTaskService({
-      taskStore: stores.task,
-      claimStore: stores.claim,
-      policy,
-      eventService: events,
-      now: nowIso,
-    }),
+    task,
     recovery: createRecoveryService({
       taskStore: stores.task,
       claimStore: stores.claim,
@@ -104,6 +111,10 @@ export async function buildSwarmStack(
       eventService: events,
       config,
       now: nowIso,
+    }),
+    obligations: createObligationService({
+      taskService: task,
+      taskStore: stores.task,
     }),
   };
   return { paths, config, stores, services };

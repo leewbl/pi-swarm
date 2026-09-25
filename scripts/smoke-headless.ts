@@ -212,7 +212,8 @@ async function main(): Promise<void> {
     onMatch: (matched) => inbox.enqueueEvents(matched),
   });
   await testerPoller.poll();
-  const msg = inbox.drain();
+  const msg = inbox.peek();
+  inbox.ack();
   check(
     "inbox consolidated batch",
     msg !== null && (msg.body.includes("task.completed") || msg.body.includes("task.claimed")),

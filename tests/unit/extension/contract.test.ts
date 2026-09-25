@@ -19,6 +19,7 @@ const claimedTask = {
     createdAt: "2026-09-11T15:00:00Z",
     updatedAt: "2026-09-11T15:00:00Z",
     dependsOn: [],
+    blockedOn: [],
     inputs: [],
     outputs: [],
   },
@@ -55,13 +56,19 @@ describe("renderRoleContract", () => {
     expect(contract).toContain("findings/backend/**");
   });
 
-  it("contains the ten minimum rules verbatim in spirit", () => {
+  it("contains the structural-liveness rules verbatim in spirit", () => {
     expect(contract).toContain("You are an autonomous Pi Swarm agent with role backend.");
     expect(contract).toContain("Discover work from the shared task pool.");
-    expect(contract).toContain("Do not execute a task until swarm_task_claim succeeds.");
-    expect(contract).toContain("A task event does not grant ownership.");
-    expect(contract).toContain("Never contact or invoke another agent process directly.");
-    expect(contract).toContain("Create shared follow-up work as new open tasks.");
+    expect(contract).toContain("Never treat an event as task ownership.");
+    expect(contract).toContain("Never execute a task until swarm_task_claim succeeds.");
+    expect(contract).toContain(
+      "If another agent must act later, create durable work (swarm_request_create); do not only emit an event.",
+    );
+    expect(contract).toContain("Respect active specialization boundaries returned by the runtime.");
+    expect(contract).toContain("Fallback is allowed only when the resolver says fallback is open.");
+    expect(contract).toContain(
+      "If work is unserviceable, surface the missing requirement instead of waiting silently.",
+    );
     expect(contract).toContain("Use domain tools for task lifecycle mutations.");
     expect(contract).toContain("Respect blackboard read/write policy from your manifest.");
     expect(contract).toContain("Put large outputs in artifacts and reference them.");

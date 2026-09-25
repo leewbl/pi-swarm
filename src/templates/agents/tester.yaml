@@ -13,6 +13,18 @@ capabilities:
   - acceptance
   - evaluation
 
+domains:
+  primary:
+    - testing
+    - verification
+    - evaluation
+  secondary:
+    - review
+    - debugging
+
+fallback:
+  enabled: true
+
 taskPolicy:
   claim:
     roles:

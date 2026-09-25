@@ -3,9 +3,14 @@
  * scheduler (architecture §15, PRD Workstream C).
  *
  * Enqueued tasks/events/warnings coalesce into ONE SwarmInboxMessage per
- * drain: counts over dumps, task ids with titles and paths, never full event
+ * flush: counts over dumps, task ids with titles and paths, never full event
  * bodies. Kind precedence is actionable > warning > informational (a batch
  * carrying a warning must never be delivered as an aside mid-turn).
+ *
+ * Structural liveness fix §19: delivery is peek → deliver → ack/nack instead
+ * of a destructive drain. A failed wake keeps the batch queued so the next
+ * flush retries it; ack clears it. One consolidated message exists at a
+ * time, so batch ids are unnecessary — the queue itself is the batch.
  */
 import type { MatchedEvent, SwarmInboxMessage, WakeKind } from "./ports.js";
 import type { TaskCandidate } from "./task-poller.js";
@@ -16,8 +21,12 @@ export interface Inbox {
   enqueueEvents(events: MatchedEvent[]): void;
   enqueueTasks(candidates: TaskCandidate[]): void;
   enqueueWarning(text: string): void;
-  /** One consolidated message, or null when nothing is queued; clears the queue. */
-  drain(): SwarmInboxMessage | null;
+  /** Render the consolidated message WITHOUT clearing the queue; null when empty. */
+  peek(): SwarmInboxMessage | null;
+  /** Clear the queue after a successful delivery. */
+  ack(): void;
+  /** Retain the queue after a failed delivery (next flush retries). */
+  nack(): void;
   /** Undelivered items waiting for the next wake flush. */
   pendingCount(): number;
 }
@@ -42,8 +51,10 @@ function renderTitle(queue: InboxQueue): string {
 
 function renderTaskLines(tasks: TaskCandidate[]): string[] {
   const lines = tasks.slice(0, MAX_TASK_LINES).map((t) => {
-    const label = `${t.taskId} [P${t.priority}]${t.title.length > 0 ? ` ${t.title}` : ""}`;
-    return `${label} — ${t.path}`;
+    const tier = t.tier !== undefined ? `[${t.tier}] ` : "";
+    const label = `${t.taskId} ${tier}[P${t.priority}]${t.title.length > 0 ? ` ${t.title}` : ""}`;
+    const reason = t.tier === "fallback" && t.reason !== undefined ? `\n  ${t.reason}` : "";
+    return `${label} — ${t.path}${reason}`;
   });
   if (tasks.length > MAX_TASK_LINES) {
     lines.push(`… and ${tasks.length - MAX_TASK_LINES} more`);
@@ -82,6 +93,12 @@ function renderBody(queue: InboxQueue): string {
   return sections.join("\n\n");
 }
 
+function consolidatedKind(queue: InboxQueue): WakeKind {
+  const actionable = queue.tasks.length > 0 || queue.events.some((m) => m.actionable);
+  if (actionable) return "actionable";
+  return queue.warnings.length > 0 ? "warning" : "informational";
+}
+
 export function createInbox(): Inbox {
   let queue: InboxQueue = { tasks: [], events: [], warnings: [] };
   return {
@@ -94,20 +111,21 @@ export function createInbox(): Inbox {
     enqueueWarning(text): void {
       queue.warnings.push(text);
     },
-    drain(): SwarmInboxMessage | null {
-      const drained = queue;
-      queue = { tasks: [], events: [], warnings: [] };
-      if (drained.tasks.length === 0 && drained.events.length === 0 && drained.warnings.length === 0) {
+    peek(): SwarmInboxMessage | null {
+      if (queue.tasks.length === 0 && queue.events.length === 0 && queue.warnings.length === 0) {
         return null;
       }
-      const actionable =
-        drained.tasks.length > 0 || drained.events.some((m) => m.actionable);
-      const kind: WakeKind = actionable
-        ? "actionable"
-        : drained.warnings.length > 0
-          ? "warning"
-          : "informational";
-      return { kind, title: renderTitle(drained), body: renderBody(drained) };
+      return {
+        kind: consolidatedKind(queue),
+        title: renderTitle(queue),
+        body: renderBody(queue),
+      };
+    },
+    ack(): void {
+      queue = { tasks: [], events: [], warnings: [] };
+    },
+    nack(): void {
+      // Retain for retry on the next wake flush.
     },
     pendingCount(): number {
       return queue.tasks.length + queue.events.length + queue.warnings.length;

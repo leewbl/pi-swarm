@@ -32,6 +32,9 @@ export const RoleId = z.string().regex(ROLE_ID_RE, "must be lowercase kebab-case
 export const TopicId = z.string().regex(TOPIC_RE, "must be lowercase kebab-case topic id");
 export const TaskId = z.string().regex(TASK_ID_RE, "must match TASK-0000");
 export const EventTypeId = z.string().regex(EVENT_TYPE_RE, "must be dotted lowercase, e.g. task.claimed");
+/** Kebab-case work-domain id (same shape as role ids), e.g. `backend`. */
+export const DOMAIN_RE = ROLE_ID_RE;
+export const DomainId = z.string().regex(DOMAIN_RE, "must be lowercase kebab-case domain id");
 
 // ---------------------------------------------------------------------------
 // Routing
@@ -99,15 +102,28 @@ export type SwarmEvent = z.infer<typeof SwarmEventSchema>;
 // Tasks
 // ---------------------------------------------------------------------------
 
-export const TASK_STATUSES = ["open", "claimed", "in_progress", "done", "failed", "abandoned"] as const;
+export const TASK_STATUSES = [
+  "open",
+  "claimed",
+  "in_progress",
+  "blocked",
+  "done",
+  "failed",
+  "abandoned",
+] as const;
 export const TaskStatusSchema = z.enum(TASK_STATUSES);
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
-/** Valid lifecycle transitions (architecture §8). */
+/**
+ * Valid lifecycle transitions (architecture §8 + structural liveness fix §7).
+ * `blocked` retains its claim/owner; the blocker itself is durable work in
+ * `blockedOn`. Recovery may repair blocked -> open when the claim is lost.
+ */
 export const TASK_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   open: ["claimed"],
   claimed: ["in_progress", "abandoned"],
-  in_progress: ["done", "failed", "abandoned"],
+  in_progress: ["blocked", "done", "failed", "abandoned"],
+  blocked: ["in_progress", "abandoned"],
   done: [],
   failed: [],
   abandoned: ["open"],
@@ -122,6 +138,29 @@ export const TaskMetadataSchema = z.object({
   eligibleRoles: z.array(RoleId).optional(),
   /** Capabilities a claimant must have. Combined per manifest capability mode. */
   requiredCapabilities: z.array(z.string().min(1)).optional(),
+  /**
+   * Primary organizational ownership domain used by topology resolution
+   * (structural liveness fix §6.2). Tasks with a workDomain resolve through
+   * the Boundary Gate; tasks without it keep the legacy resolver path.
+   */
+  workDomain: DomainId.optional(),
+  /** Soft ranking hints inside an eligible tier; never make a task impossible. */
+  preferredCapabilities: z.array(z.string().min(1)).optional(),
+  /** True feasibility constraints that fallback cannot bypass. */
+  hardRequirements: z
+    .object({ capabilities: z.array(z.string().min(1)).default([]) })
+    .optional(),
+  /** Policy constraints such as self-review exclusion. */
+  constraints: z
+    .object({
+      excludeTaskAuthor: z.boolean().optional(),
+      excludeCurrentClaimant: z.boolean().optional(),
+    })
+    .optional(),
+  /** Whether the task may leave primary/secondary boundaries when no specialist exists. */
+  fallback: z.object({ allowed: z.boolean() }).optional(),
+  /** One-shot durable scheduling gate: the task is not actionable before this timestamp. */
+  availableAt: IsoTime.optional(),
   createdBy: z.object({
     role: RoleId,
     instanceId: z.string().regex(INSTANCE_ID_RE),
@@ -130,6 +169,16 @@ export const TaskMetadataSchema = z.object({
   updatedAt: IsoTime,
   parentTask: TaskId.optional(),
   dependsOn: z.array(TaskId).default([]),
+  /** Durable obligations whose completion this task waits on while blocked. */
+  blockedOn: z.array(TaskId).default([]),
+  /** Origin/idempotency metadata for compound coordination operations. */
+  origin: z
+    .object({
+      type: z.string().min(1),
+      sourceTaskId: TaskId.optional(),
+      requestKey: z.string().min(1).optional(),
+    })
+    .optional(),
   /** Blackboard/artifact references a claimant should read first. */
   inputs: z.array(z.string().min(1)).default([]),
   /** Blackboard/artifact references produced by the claimant. */
@@ -222,6 +271,19 @@ export const AgentManifestSchema = z.object({
     description: z.string().optional(),
   }),
   capabilities: z.array(z.string().min(1)).default([]),
+  /**
+   * Work-domain ownership declaration (structural liveness fix §4).
+   * Backward compatibility: no `domains` block -> primary=[role],
+   * secondary=[], fallback=true.
+   */
+  domains: z
+    .object({
+      primary: z.array(DomainId).optional(),
+      secondary: z.array(DomainId).optional(),
+    })
+    .optional(),
+  /** Whether this agent may serve unoccupied domains through fallback. Default: true. */
+  fallback: z.object({ enabled: z.boolean().optional() }).optional(),
   taskPolicy: z
     .object({
       claim: z
@@ -266,6 +328,12 @@ export interface NormalizedAgentManifest {
   /** Task eligibleRoles this agent may match (task must contain at least one). */
   claimRoles: string[];
   capabilityMode: "all" | "any";
+  /** Domains this agent owns as an active primary specialist (fix §4.1: default [role]). */
+  primaryDomains: string[];
+  /** Domains this agent may serve when no primary specialist is active. */
+  secondaryDomains: string[];
+  /** Whether this agent may take fallback work in unoccupied domains. */
+  fallbackEnabled: boolean;
   subscriptions: { direct: boolean; topics: string[] };
   blackboard: { read: string[]; write: string[] };
   wakeup: { taskAvailable: boolean; events: string[] };
@@ -279,6 +347,9 @@ export function normalizeAgentManifest(m: AgentManifest): NormalizedAgentManifes
     capabilities: m.capabilities,
     claimRoles: m.taskPolicy?.claim?.roles ?? [m.agent.role],
     capabilityMode: m.taskPolicy?.claim?.capabilities?.mode ?? "all",
+    primaryDomains: m.domains?.primary ?? [m.agent.role],
+    secondaryDomains: m.domains?.secondary ?? [],
+    fallbackEnabled: m.fallback?.enabled ?? true,
     subscriptions: {
       direct: m.subscriptions?.direct ?? true,
       topics: m.subscriptions?.broadcast?.topics ?? [],
@@ -312,6 +383,20 @@ export const SwarmConfigSchema = z.object({
       wakeBatchWindowMs: z.number().int().min(0).default(250),
       heartbeatIntervalMs: z.number().int().min(500).default(5000),
       presenceStaleMs: z.number().int().min(1000).default(15000),
+    })
+    .default({}),
+  scheduling: z
+    .object({
+      /** Global fallback gate; a task or manifest may still opt out. Default: true. */
+      fallbackEnabled: z.boolean().default(true),
+    })
+    .default({}),
+  liveness: z
+    .object({
+      /** Watchdog warns when serviceable work makes no progress this long. */
+      warningAfterMs: z.number().int().min(1000).default(60_000),
+      /** Watchdog re-wake interval for eligible idle agents. */
+      rewakeAfterMs: z.number().int().min(1000).default(30_000),
     })
     .default({}),
   blackboard: z

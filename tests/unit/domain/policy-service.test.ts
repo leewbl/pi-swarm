@@ -11,6 +11,8 @@ function task(opts: {
   eligibleRoles?: string[];
   requiredCapabilities?: string[];
   dependsOn?: string[];
+  blockedOn?: string[];
+  availableAt?: string;
 }): TaskDocument {
   return {
     metadata: {
@@ -22,10 +24,12 @@ function task(opts: {
       ...(opts.requiredCapabilities !== undefined
         ? { requiredCapabilities: opts.requiredCapabilities }
         : {}),
+      ...(opts.availableAt !== undefined ? { availableAt: opts.availableAt } : {}),
       createdBy: { role: "coordinator", instanceId: "coordinator-01abcdefghjkmnpqrstvwxyz01" },
       createdAt: "2026-09-11T10:00:00Z",
       updatedAt: "2026-09-11T10:00:00Z",
       dependsOn: opts.dependsOn ?? [],
+      blockedOn: opts.blockedOn ?? [],
       inputs: [],
       outputs: [],
     },

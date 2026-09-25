@@ -1,5 +1,5 @@
 /**
- * Acceptance 1 + 6: the extension factory registers 1 command + 13 tools on
+ * Acceptance 1 + 6: the extension factory registers 1 command + 18 tools on
  * a fake host without throwing, and the context filter keeps only the newest
  * inbox + contract messages. compose.js is mocked because the real store and
  * runtime factories are other workstreams (integration-tested by the parent).
@@ -29,24 +29,29 @@ const EXPECTED_TOOLS = [
   "swarm_task_complete",
   "swarm_task_fail",
   "swarm_task_abandon",
+  "swarm_task_block",
+  "swarm_task_unblock",
   "swarm_task_reopen",
+  "swarm_request_create",
+  "swarm_task_candidates",
+  "swarm_topology",
   "swarm_event_emit",
   "swarm_blackboard_read",
   "swarm_blackboard_write",
   "swarm_artifact_publish",
 ];
-
 const EXPECTED_HOOKS = [
   "session_start",
   "before_agent_start",
   "agent_start",
   "agent_end",
+  "session_stop",
   "context",
   "session_shutdown",
 ];
 
 describe("piSwarmExtension factory", () => {
-  it("registers 1 command and 13 tools on the host without throwing", () => {
+  it("registers 1 command and 18 tools on the host without throwing", () => {
     const pi = new FakePi();
     expect(() => piSwarmExtension(pi)).not.toThrow();
 

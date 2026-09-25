@@ -37,6 +37,7 @@ const createdTask: TaskDocument = {
     createdAt: "2026-09-11T15:00:00Z",
     updatedAt: "2026-09-11T15:00:00Z",
     dependsOn: [],
+    blockedOn: [],
     inputs: [],
     outputs: [],
   },

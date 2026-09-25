@@ -12,6 +12,16 @@ runtime:
   heartbeatIntervalMs: 5000
   presenceStaleMs: 15000
 
+scheduling:
+  # Global fallback gate; tasks and manifests may still opt out.
+  fallbackEnabled: true
+
+liveness:
+  # Watchdog warns when serviceable work makes no progress this long.
+  warningAfterMs: 60000
+  # Watchdog re-wake interval for eligible idle agents.
+  rewakeAfterMs: 30000
+
 blackboard:
   # Shared hotspot files and the only roles allowed to write them.
   hotspots:

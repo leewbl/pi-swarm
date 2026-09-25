@@ -14,6 +14,19 @@ capabilities:
   - typescript
   - testing
 
+domains:
+  primary:
+    - backend
+    - api
+    - data
+  secondary:
+    - architecture
+    - decision
+    - testing
+
+fallback:
+  enabled: true
+
 taskPolicy:
   claim:
     roles:

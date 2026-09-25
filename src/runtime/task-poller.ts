@@ -27,6 +27,10 @@ export interface TaskCandidate {
   priority: number;
   /** Workspace-relative path: `tasks/<id>.md`. */
   path: string;
+  /** Resolver tier explaining WHY this agent is eligible (fix §22). */
+  tier?: "primary" | "secondary" | "fallback";
+  /** Eligibility explanation (set for fallback candidates). */
+  reason?: string;
 }
 
 export interface TaskPoller {
@@ -34,10 +38,11 @@ export interface TaskPoller {
   poll(): Promise<TaskCandidate[]>;
   /** Commit the last surfaced batch as delivered (call after wake delivery). */
   flushNotified(): void;
+  /** Drop the delivered-suppression for these taskIds (watchdog re-wake). */
+  resurface(taskIds: readonly string[]): void;
   /** ISO time of the most recent scan, or null before the first. */
   readonly lastScanAt: string | null;
 }
-
 export interface TaskPollerDeps {
   identity: AgentIdentity;
   manifest: NormalizedAgentManifest;
@@ -105,6 +110,10 @@ export function createTaskPoller(deps: TaskPollerDeps): TaskPoller {
             title,
             priority: view.metadata.priority,
             path: `tasks/${view.metadata.id}.md`,
+            ...(view.tier !== undefined ? { tier: view.tier } : {}),
+            ...(view.tier === "fallback"
+              ? { reason: `no active ${view.metadata.workDomain ?? "specialist"} specialist; you are an allowed fallback` }
+              : {}),
           };
         }),
       );
@@ -127,6 +136,9 @@ export function createTaskPoller(deps: TaskPollerDeps): TaskPoller {
       pending = null;
     },
 
+    resurface(taskIds: readonly string[]): void {
+      for (const id of taskIds) notified.delete(id);
+    },
     get lastScanAt(): string | null {
       return lastScanAt;
     },
