@@ -173,9 +173,13 @@ describe("/swarm role <role>", () => {
 
     // Registry now serves the session stack + runtime.
     const binding = getActiveBinding();
-    expect(binding?.role).toBe("backend");
     expect(binding?.runtime).toBe(runtime);
     expect(binding?.identity.instanceId).toBe("backend-01aaaaaaaaaaaaaaaaaaaaaaaa");
+
+    // Role pinned to the window surfaces: label + session name (header bar /
+    // terminal tab title), so each swarm window is identifiable at a glance.
+    expect(pi.label).toBe("Pi Swarm · backend");
+    expect(pi.sessionNames).toEqual(["swarm/backend"]);
   });
 
   it("re-binding the same role in the same session replaces the instance (own pid is exempt)", async () => {

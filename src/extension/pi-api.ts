@@ -124,6 +124,11 @@ export interface PiLike {
    */
   appendEntry(entryOrType: SessionEntryLike | string, data?: unknown): unknown;
   setLabel(label: string): unknown;
+  /**
+   * omp >= 18: names the session. Surfaced in the TUI header bar and the
+   * terminal tab title — used to pin the bound swarm role per window.
+   */
+  setSessionName?(name: string): unknown;
   logger?: PiLoggerLike;
 }
 

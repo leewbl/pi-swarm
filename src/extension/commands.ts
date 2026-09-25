@@ -238,6 +238,15 @@ export async function bindRole(
   await runtime.start?.();
   setActiveBinding({ role, identity, manifest, stack: ownStack, runtime });
   persistBinding(pi, role);
+  // Pin the role to this window's surfaces: the extension label and the
+  // session name (TUI header + terminal tab title) so every swarm window is
+  // identifiable at a glance. Best-effort — old hosts lack setSessionName.
+  try {
+    pi.setLabel(`Pi Swarm · ${role}`);
+    pi.setSessionName?.(`swarm/${role}`);
+  } catch {
+    // display-only; never fail the bind on host surface differences
+  }
   return {
     ok: true,
     message:

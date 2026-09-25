@@ -40,6 +40,7 @@ import type { SwarmStack } from "../../../src/extension/compose.js";
 
 export class FakePi {
   label: string | null = null;
+  sessionNames: string[] = [];
   readonly commands = new Map<string, { description: string; handler: CommandHandler }>();
   readonly tools = new Map<string, ToolDefinition>();
   readonly hooks = new Map<string, ExtensionHook>();
@@ -48,6 +49,10 @@ export class FakePi {
 
   setLabel(label: string): void {
     this.label = label;
+  }
+
+  setSessionName(name: string): void {
+    this.sessionNames.push(name);
   }
 
   registerCommand(name: string, def: { description: string; handler: CommandHandler }): void {
