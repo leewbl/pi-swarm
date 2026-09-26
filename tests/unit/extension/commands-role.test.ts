@@ -176,9 +176,7 @@ describe("/swarm role <role>", () => {
     expect(binding?.runtime).toBe(runtime);
     expect(binding?.identity.instanceId).toBe("backend-01aaaaaaaaaaaaaaaaaaaaaaaa");
 
-    // Role pinned to the window surfaces: label + session name (header bar /
-    // terminal tab title), so each swarm window is identifiable at a glance.
-    expect(pi.label).toBe("Pi Swarm · backend");
+    // Role pinned to the HUD status line via the session name.
     expect(pi.sessionNames).toEqual(["swarm/backend"]);
   });
 

@@ -238,11 +238,11 @@ export async function bindRole(
   await runtime.start?.();
   setActiveBinding({ role, identity, manifest, stack: ownStack, runtime });
   persistBinding(pi, role);
-  // Pin the role to this window's surfaces: the extension label and the
-  // session name (TUI header + terminal tab title) so every swarm window is
-  // identifiable at a glance. Best-effort — old hosts lack setSessionName.
+  // Pin the role to the HUD status line via the session name (verified to
+  // render on omp's status bar; the terminal-tab mirror is decoupled by
+  // `omp config set tui.titleState false`). Best-effort: hosts without
+  // setSessionName simply skip the display.
   try {
-    pi.setLabel(`Pi Swarm · ${role}`);
     pi.setSessionName?.(`swarm/${role}`);
   } catch {
     // display-only; never fail the bind on host surface differences
